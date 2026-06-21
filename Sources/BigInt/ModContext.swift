@@ -5,8 +5,8 @@
 // modPow) for odd moduli. Comparisons that Kotlin writes as `>=`/`<` on
 // MutableBigInt are expressed here via `.compareTo(...)`.
 
-final class ModContext {
-    let m: BigInt
+public final class ModContext {
+    public let m: BigInt
     let kBits: Int
     private let barrett: Barrett
     private let montgomery: Montgomery?
@@ -22,7 +22,7 @@ final class ModContext {
     private let invQNewR: MutableBigInt
     private let invQNewT: MutableBigInt
 
-    init(_ m: BigInt, useBarrettOnly: Bool = false) {
+    public init(_ m: BigInt, useBarrettOnly: Bool = false) {
         if m.compareTo(Int32(1)) < 0 { fatalError() }
         self.m = m
         self.kBits = m.magnitudeBitLen()
@@ -39,47 +39,47 @@ final class ModContext {
         invQNewT = MutableBigInt.withBitCapacityHint(kBits + 1)
     }
 
-    @discardableResult func modSet(_ a: BigIntNumber, _ out: MutableBigInt) -> MutableBigInt { out.setMod(a, m) }
-    @discardableResult func modSet(_ a: Int32, _ out: MutableBigInt) -> MutableBigInt { out.set(a); return out.setMod(out, m) }
-    @discardableResult func modSet(_ a: Int64, _ out: MutableBigInt) -> MutableBigInt { out.set(a); return out.setMod(out, m) }
+    @discardableResult public func modSet(_ a: BigIntNumber, _ out: MutableBigInt) -> MutableBigInt { out.setMod(a, m) }
+    @discardableResult public func modSet(_ a: Int32, _ out: MutableBigInt) -> MutableBigInt { out.set(a); return out.setMod(out, m) }
+    @discardableResult public func modSet(_ a: Int64, _ out: MutableBigInt) -> MutableBigInt { out.set(a); return out.setMod(out, m) }
 
-    func modAdd(_ a: BigIntNumber, _ b: BigIntNumber, _ out: MutableBigInt) {
+    public func modAdd(_ a: BigIntNumber, _ b: BigIntNumber, _ out: MutableBigInt) {
         out.setAdd(a, b)
         if out.compareTo(m) >= 0 { out -= m }
     }
-    func modAdd(_ a: BigIntNumber, _ b: Int32, _ out: MutableBigInt) { modAdd(a, Int64(b), out) }
-    func modAdd(_ a: BigIntNumber, _ b: Int64, _ out: MutableBigInt) {
+    public func modAdd(_ a: BigIntNumber, _ b: Int32, _ out: MutableBigInt) { modAdd(a, Int64(b), out) }
+    public func modAdd(_ a: BigIntNumber, _ b: Int64, _ out: MutableBigInt) {
         out.setAdd(a, b)
         if out.compareTo(m) >= 0 { out -= m }
     }
 
-    func modSub(_ a: BigIntNumber, _ b: BigIntNumber, _ out: MutableBigInt) {
+    public func modSub(_ a: BigIntNumber, _ b: BigIntNumber, _ out: MutableBigInt) {
         out.setSub(a, b)
         if out.isNegative() { out += m }
     }
-    func modSub(_ a: BigIntNumber, _ b: Int32, _ out: MutableBigInt) { modSub(a, Int64(b), out) }
-    func modSub(_ a: BigIntNumber, _ b: Int64, _ out: MutableBigInt) {
+    public func modSub(_ a: BigIntNumber, _ b: Int32, _ out: MutableBigInt) { modSub(a, Int64(b), out) }
+    public func modSub(_ a: BigIntNumber, _ b: Int64, _ out: MutableBigInt) {
         out.setSub(a, b)
         if out.isNegative() { out += m }
     }
 
-    func modMul(_ a: BigIntNumber, _ b: BigIntNumber, _ out: MutableBigInt) { barrett.modMul(a, b, out) }
-    func modMul(_ a: BigIntNumber, _ b: Int32, _ out: MutableBigInt) { barrett.modMul(a, b, out) }
-    func modMul(_ a: BigIntNumber, _ b: Int64, _ out: MutableBigInt) { barrett.modMul(a, b, out) }
-    func modSqr(_ a: BigIntNumber, _ out: MutableBigInt) { barrett.modSqr(a, out) }
+    public func modMul(_ a: BigIntNumber, _ b: BigIntNumber, _ out: MutableBigInt) { barrett.modMul(a, b, out) }
+    public func modMul(_ a: BigIntNumber, _ b: Int32, _ out: MutableBigInt) { barrett.modMul(a, b, out) }
+    public func modMul(_ a: BigIntNumber, _ b: Int64, _ out: MutableBigInt) { barrett.modMul(a, b, out) }
+    public func modSqr(_ a: BigIntNumber, _ out: MutableBigInt) { barrett.modSqr(a, out) }
 
-    func modPow(_ base: BigIntNumber, _ exp: BigInt, _ out: MutableBigInt) {
+    public func modPow(_ base: BigIntNumber, _ exp: BigInt, _ out: MutableBigInt) {
         if let mont = montgomery { mont.modPow(base, exp, out) } else { barrett.modPow(base, exp, out) }
     }
-    func modPow(_ base: BigIntNumber, _ exp: Int, _ out: MutableBigInt) { modPow(base, Int64(exp), out) }
-    func modPow(_ base: BigIntNumber, _ exp: Int64, _ out: MutableBigInt) {
+    public func modPow(_ base: BigIntNumber, _ exp: Int, _ out: MutableBigInt) { modPow(base, Int64(exp), out) }
+    public func modPow(_ base: BigIntNumber, _ exp: Int64, _ out: MutableBigInt) {
         if let mont = montgomery { mont.modPow(base, exp, out) } else { barrett.modPow(base, exp, out) }
     }
 
-    func modHalfLucas(_ a: MutableBigInt, _ out: MutableBigInt) { barrett.modHalfLucas(a, out) }
+    public func modHalfLucas(_ a: MutableBigInt, _ out: MutableBigInt) { barrett.modHalfLucas(a, out) }
 
     /// Multiplicative inverse of `a` mod `m` (requires 0 ≤ a < m); throws if not invertible.
-    func modInv(_ a: BigIntNumber, _ out: MutableBigInt) {
+    public func modInv(_ a: BigIntNumber, _ out: MutableBigInt) {
         precondition(!a.isNegative() && a.compareTo(m) < 0)
         invR.set(m)
         invNewR.set(a)

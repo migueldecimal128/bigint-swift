@@ -27,10 +27,12 @@
 
 import Foundation
 
-typealias Limb = UInt32
+public typealias Limb = UInt32
 
 /// `Magia` == MAGnitude array. Reference-type little-endian 32-bit limb buffer.
-final class Magia {
+/// Public as a *type* only (it appears in the public `BigIntNumber.magia`
+/// requirement); its members stay internal, so it is opaque to consumers.
+public final class Magia {
     var a: ContiguousArray<Limb>
 
     init(_ size: Int) {

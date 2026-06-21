@@ -81,6 +81,24 @@ nonzero-mask idiom (a genuinely signed view of a single limb).
 - Shared singletons (`MAGIA_ZERO`, `MAGIA_ONE`, future tables) are
   `nonisolated(unsafe) let` — shared, never mutated, matching Kotlin's `val`.
 
+## Access control (public API boundary)
+The value layer is `public` so external packages consume it with a plain
+`import BigInt`: `BigInt`, `BigIntNumber`, `MutableBigInt`, `BigIntRandom`,
+`BigIntPrime` (+ `LucasParams`), `ModContext`, and all their user-facing
+methods/operators/factories. The engine stays `internal`: `magia_*` free
+functions, `BigIntAlgorithms`, `BigIntSerde`, `BigIntParsePrint`,
+`Latin1Iterator`, `Verify`, `Intrinsic`, `BigIntStats`, the throwers, and the
+nested `Barrett`/`Montgomery`. Nothing is `@inlinable`, so a `public` method may
+freely call `internal` helpers (no `@usableFromInline` needed).
+- `Meta`/`Magia` are public as **types only** (members stay internal → opaque):
+  the public `BigIntNumber` protocol requires `meta`/`magia`, and Swift forbids
+  internal requirements on a public protocol. One forced divergence from Kotlin,
+  where they are `internal`.
+- A type going `public` LOSES implicit `Sendable` — declare it where a `static
+  let` of that type exists (e.g. `LucasParams: Sendable` for `LUCAS_COMPOSITE`).
+- The shared singletons stay `nonisolated(unsafe) let` (above) — fine for a
+  `public static let` because the unsafe opt-out bypasses the Sendable check.
+
 ## Errors
 - `BigIntExceptions.kt` throwers → `-> Never` `fatalError` (Swift has no
   unchecked exceptions; every site is a precondition/invariant violation). The

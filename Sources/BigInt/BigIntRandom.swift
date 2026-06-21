@@ -16,19 +16,19 @@
 // uniformity matter, not byte-for-byte stream parity.
 
 /// Seedable `RandomNumberGenerator` analog of `kotlin.random.Random`.
-final class BigIntRandom: RandomNumberGenerator {
+public final class BigIntRandom: RandomNumberGenerator {
     private var state: UInt64
 
-    init(_ seed: Int64) { state = UInt64(bitPattern: seed) }
-    init(_ seed: UInt64) { state = seed }
+    public init(_ seed: Int64) { state = UInt64(bitPattern: seed) }
+    public init(_ seed: UInt64) { state = seed }
 
     /// Shared default instance (Kotlin `Random.Default`). Fixed seed so test
     /// runs that use the default RNG are reproducible.
-    nonisolated(unsafe) static let Default = BigIntRandom(0x2545_F491_4F6C_DD1D as UInt64)
+    nonisolated(unsafe) public static let Default = BigIntRandom(0x2545_F491_4F6C_DD1D as UInt64)
 
     /// The sole hand-rolled primitive (SplitMix64) — the seedable bit source the
     /// stdlib does not provide. Everything else routes through stdlib randomness.
-    func next() -> UInt64 {
+    public func next() -> UInt64 {
         state = state &+ 0x9E37_79B9_7F4A_7C15
         var z = state
         z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
@@ -40,24 +40,24 @@ final class BigIntRandom: RandomNumberGenerator {
     // originals; each delegates to the (unbiased) stdlib generic. `var g = self`
     // gives an `inout`-able binding to the same instance (class → shared state).
     /// Uniform full-width `Int32` (negatives included), Kotlin `nextInt()`.
-    func nextInt() -> Int32 { Int32(truncatingIfNeeded: next()) }
+    public func nextInt() -> Int32 { Int32(truncatingIfNeeded: next()) }
     /// Uniform `Int32` in `[0, until)`. Kotlin `nextInt(until)`.
-    func nextInt(_ until: Int32) -> Int32 { var g = self; return Int32.random(in: 0..<until, using: &g) }
+    public func nextInt(_ until: Int32) -> Int32 { var g = self; return Int32.random(in: 0..<until, using: &g) }
     /// Uniform `Int32` in `[from, until)`. Kotlin `nextInt(from, until)`.
-    func nextInt(_ from: Int32, _ until: Int32) -> Int32 { var g = self; return Int32.random(in: from..<until, using: &g) }
+    public func nextInt(_ from: Int32, _ until: Int32) -> Int32 { var g = self; return Int32.random(in: from..<until, using: &g) }
     /// Uniform full-width `Int64`, Kotlin `nextLong()`.
-    func nextLong() -> Int64 { Int64(bitPattern: next()) }
+    public func nextLong() -> Int64 { Int64(bitPattern: next()) }
     /// Kotlin `nextBoolean()`.
-    func nextBoolean() -> Bool { var g = self; return Bool.random(using: &g) }
+    public func nextBoolean() -> Bool { var g = self; return Bool.random(using: &g) }
     /// Uniform `Double` in `[from, until)`, Kotlin `nextDouble(from, until)`.
-    func nextDouble(_ from: Double, _ until: Double) -> Double { var g = self; return Double.random(in: from..<until, using: &g) }
-    func nextDouble() -> Double { var g = self; return Double.random(in: 0..<1, using: &g) }
+    public func nextDouble(_ from: Double, _ until: Double) -> Double { var g = self; return Double.random(in: from..<until, using: &g) }
+    public func nextDouble() -> Double { var g = self; return Double.random(in: 0..<1, using: &g) }
 }
 
 extension BigInt {
 
     /// Random BigInt with magnitude uniform in `0 ..< 2^maxBitLen`.
-    static func randomWithMaxBitLen(
+    public static func randomWithMaxBitLen(
         _ maxBitLen: Int,
         _ rng: BigIntRandom = BigIntRandom.Default,
         withRandomSign: Bool = false
@@ -88,7 +88,7 @@ extension BigInt {
     }
 
     /// Random BigInt with a bit length uniform in `[bitLenMin, bitLenMax]`.
-    static func randomWithMaxBitLen(
+    public static func randomWithMaxBitLen(
         _ bitLenMin: Int,
         _ bitLenMax: Int,
         _ rng: BigIntRandom = BigIntRandom.Default,
@@ -101,7 +101,7 @@ extension BigInt {
     }
 
     /// Random BigInt with **exactly** `bitLen` bits (top bit always set).
-    static func randomWithBitLen(
+    public static func randomWithBitLen(
         _ bitLen: Int,
         _ rng: BigIntRandom = BigIntRandom.Default,
         withRandomSign: Bool = false,
@@ -132,7 +132,7 @@ extension BigInt {
     }
 
     /// Random BigInt with bit length uniform in `0 .. maxBitLen`.
-    static func randomWithRandomBitLen(
+    public static func randomWithRandomBitLen(
         _ maxBitLen: Int,
         _ rng: BigIntRandom = BigIntRandom.Default,
         withRandomSign: Bool = false
@@ -141,7 +141,7 @@ extension BigInt {
     }
 
     /// Uniform random BigInt in `[0, max)` (rejection sampling). `max` must be > 0.
-    static func randomBelow(_ max: BigInt, _ rnd: BigIntRandom = BigIntRandom.Default) -> BigInt {
+    public static func randomBelow(_ max: BigInt, _ rnd: BigIntRandom = BigIntRandom.Default) -> BigInt {
         precondition(max.compareTo(BigInt.ZERO) > 0, "max must be > 0 for randomBelow(max)")
         let bitLen = max.magnitudeBitLen()
         while true {

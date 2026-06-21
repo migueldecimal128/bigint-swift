@@ -11,7 +11,10 @@
 // Kotlin's several `operator fun invoke(...)` overloads become labeled `init`s.
 // `shr` (arithmetic) → Swift `>>` on Int32; `ushr` (logical) → `.ushr(_:)`.
 
-struct Meta {
+// Public as a *type* only (it appears in the public `BigIntNumber.meta`
+// requirement); its members stay internal, so it is opaque to consumers — the
+// faithful analog of Kotlin's `internal` Meta.
+public struct Meta {
     let _meta: Int32
 
     init(_ meta: Int32) {

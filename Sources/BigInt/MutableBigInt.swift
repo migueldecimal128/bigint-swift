@@ -18,9 +18,9 @@ private func _validateNormLenAndInjectPoison(_ m: Magia, _ n: Int) -> Bool {
     validateNormLenAndInjectPoison(m, n)
 }
 
-final class MutableBigInt: BigIntNumber {
-    var meta: Meta
-    var magia: Magia
+public final class MutableBigInt: BigIntNumber {
+    public var meta: Meta
+    public var magia: Magia
     var limbCapacityHint = 0
     var tmp1: Magia = MAGIA_ZERO
     var tmp2: Magia = MAGIA_ZERO
@@ -33,19 +33,19 @@ final class MutableBigInt: BigIntNumber {
     // MARK: constructors
 
     /// Empty (zero) accumulator.
-    convenience init() {
+    public convenience init() {
         biStat(.MBI_CONSTRUCT_EMPTY)
         let m = Magia(4)
         verify(_validateNormLenAndInjectPoison(m, 0))
         self.init(Meta(0), m)
     }
 
-    convenience init(_ n: Int32) { self.init(n < 0, UInt64(n.magnitude)) }
-    convenience init(_ w: UInt32) { self.init(false, UInt64(w)) }
-    convenience init(_ l: Int64) { self.init(l < 0, l.magnitude) }
-    convenience init(_ dw: UInt64) { self.init(false, dw) }
+    public convenience init(_ n: Int32) { self.init(n < 0, UInt64(n.magnitude)) }
+    public convenience init(_ w: UInt32) { self.init(false, UInt64(w)) }
+    public convenience init(_ l: Int64) { self.init(l < 0, l.magnitude) }
+    public convenience init(_ dw: UInt64) { self.init(false, dw) }
 
-    convenience init(_ sign: Bool, _ dwMag: UInt64) {
+    public convenience init(_ sign: Bool, _ dwMag: UInt64) {
         biStat(.MBI_CONSTRUCT_PRIMITIVE)
         let m = Magia(4)
         m[0] = dwMag.toLimb()
@@ -55,7 +55,7 @@ final class MutableBigInt: BigIntNumber {
         self.init(Meta(signFlag: sign, normLen: normLen), m)
     }
 
-    convenience init(_ other: BigIntNumber) {
+    public convenience init(_ other: BigIntNumber) {
         biStat(.MBI_CONSTRUCT_BI)
         let n = Int(other.meta.normLen)
         let m = magia_newWithFloorLen(n)
@@ -65,7 +65,7 @@ final class MutableBigInt: BigIntNumber {
     }
 
     /// Zero accumulator with limb storage preallocated for ≥ `initialBitCapacity` bits.
-    static func withBitCapacityHint(_ initialBitCapacity: Int) -> MutableBigInt {
+    public static func withBitCapacityHint(_ initialBitCapacity: Int) -> MutableBigInt {
         if initialBitCapacity >= 0 {
             let initialLimbCapacity = max(4, magia_limbLenFromBitLen(initialBitCapacity))
             let m = magia_newWithFloorLen(initialLimbCapacity)
@@ -127,20 +127,20 @@ final class MutableBigInt: BigIntNumber {
         tmp2 = magia_newWithFloorLen(requestedLimbLen + headRoom)
     }
 
-    func ensureMagiaCapacityDiscard(_ requestedLimbLen: Int) {
+    public func ensureMagiaCapacityDiscard(_ requestedLimbLen: Int) {
         if magia.size < requestedLimbLen { resizeMagiaDiscard(requestedLimbLen) }
     }
     private func ensureMagiaCapacityCopy(_ minLimbLen: Int) {
         if magia.size < minLimbLen { resizeMagiaCopy(max(limbCapacityHint, minLimbLen)) }
     }
-    func ensureMagiaCapacityCopyZeroExtend(_ newLimbLen: Int) {
+    public func ensureMagiaCapacityCopyZeroExtend(_ newLimbLen: Int) {
         if newLimbLen <= magia.size {
             if newLimbLen > Int(meta.normLen) { magia.fill(0, Int(meta.normLen), newLimbLen) }
         } else {
             resizeMagiaCopy(max(limbCapacityHint, newLimbLen))
         }
     }
-    func ensureMagiaBitCapacityDiscard(_ minBitLen: Int) {
+    public func ensureMagiaBitCapacityDiscard(_ minBitLen: Int) {
         ensureMagiaCapacityDiscard((minBitLen + 0x1F) >> 5)
     }
     private func ensureMagiaBitCapacityCopy(_ minBitLen: Int) {
@@ -165,42 +165,42 @@ final class MutableBigInt: BigIntNumber {
         tmp1.copyInto(magia, 0, 0, Int(meta.normLen))
     }
 
-    func hintBitCapacity(_ bitCapacityHint: Int) -> MutableBigInt {
+    public func hintBitCapacity(_ bitCapacityHint: Int) -> MutableBigInt {
         if bitCapacityHint < 0 { fatalError() }
         limbCapacityHint = max(limbCapacityHint, magia_calcHeapLimbQuantum((bitCapacityHint + 31) >> 5))
         return self
     }
-    func currentLimbCapacityHint() -> Int { limbCapacityHint }
-    func didExceedHint() -> Bool { magia.size > limbCapacityHint }
-    func getHintBitCapacity() -> Int { limbCapacityHint * 32 }
+    public func currentLimbCapacityHint() -> Int { limbCapacityHint }
+    public func didExceedHint() -> Bool { magia.size > limbCapacityHint }
+    public func getHintBitCapacity() -> Int { limbCapacityHint * 32 }
 
     // MARK: meta / basic setters
 
-    func updateMeta(_ meta: Meta) {
+    public func updateMeta(_ meta: Meta) {
         self.meta = meta
         verify(validateNormLenAndInjectPoison())   // instance member (intended)
         verify(isNormalized())
     }
 
-    @discardableResult func setZero() -> MutableBigInt { validate(); updateMeta(Meta(0)); return self }
-    @discardableResult func setOne() -> MutableBigInt {
+    @discardableResult public func setZero() -> MutableBigInt { validate(); updateMeta(Meta(0)); return self }
+    @discardableResult public func setOne() -> MutableBigInt {
         validate()
         magia[0] = 1
         updateMeta(Meta(signBit: 0, normLen: 1))
         validate()
         return self
     }
-    @discardableResult func mutAbs() -> MutableBigInt { updateMeta(meta.abs()); return self }
-    @discardableResult func mutNegate() -> MutableBigInt { updateMeta(meta.negate()); return self }
-    @discardableResult func mutWithSign(_ sign: Bool) -> MutableBigInt { updateMeta(meta.withSign(sign)); return self }
+    @discardableResult public func mutAbs() -> MutableBigInt { updateMeta(meta.abs()); return self }
+    @discardableResult public func mutNegate() -> MutableBigInt { updateMeta(meta.negate()); return self }
+    @discardableResult public func mutWithSign(_ sign: Bool) -> MutableBigInt { updateMeta(meta.withSign(sign)); return self }
 
-    @discardableResult func set(_ n: Int32) -> MutableBigInt { set(n < 0, UInt64(n.magnitude)) }
-    @discardableResult func set(_ w: UInt32) -> MutableBigInt { set(false, UInt64(w)) }
-    @discardableResult func set(_ l: Int64) -> MutableBigInt { set(l < 0, l.magnitude) }
-    @discardableResult func set(_ dw: UInt64) -> MutableBigInt { set(false, dw) }
-    @discardableResult func set(_ bi: BigIntNumber) -> MutableBigInt { set(bi.meta, bi.magia) }
+    @discardableResult public func set(_ n: Int32) -> MutableBigInt { set(n < 0, UInt64(n.magnitude)) }
+    @discardableResult public func set(_ w: UInt32) -> MutableBigInt { set(false, UInt64(w)) }
+    @discardableResult public func set(_ l: Int64) -> MutableBigInt { set(l < 0, l.magnitude) }
+    @discardableResult public func set(_ dw: UInt64) -> MutableBigInt { set(false, dw) }
+    @discardableResult public func set(_ bi: BigIntNumber) -> MutableBigInt { set(bi.meta, bi.magia) }
 
-    @discardableResult func set(_ sign: Bool, _ dw: UInt64) -> MutableBigInt {
+    @discardableResult public func set(_ sign: Bool, _ dw: UInt64) -> MutableBigInt {
         let normLen = (64 - Int(dw.leadingZeroBitCount) + 31) >> 5
         magia[0] = dw.toLimb()
         magia[1] = (dw >> 32).toLimb()
@@ -208,7 +208,7 @@ final class MutableBigInt: BigIntNumber {
         return self
     }
 
-    @discardableResult func set(_ sign: Bool, _ dwHi: UInt64, _ dwLo: UInt64) -> MutableBigInt {
+    @discardableResult public func set(_ sign: Bool, _ dwHi: UInt64, _ dwLo: UInt64) -> MutableBigInt {
         let bitLen = dwHi == 0
             ? 64 - Int(dwLo.leadingZeroBitCount)
             : 128 - Int(dwHi.leadingZeroBitCount)
@@ -228,7 +228,7 @@ final class MutableBigInt: BigIntNumber {
         return self
     }
 
-    func toBigInt() -> BigInt { BigInt.from(self) }
+    public func toBigInt() -> BigInt { BigInt.from(self) }
 
     /// Reference identity vs another operand. A `BigInt` (value type) is never
     /// `this`; only another `MutableBigInt` can alias self.
@@ -238,17 +238,17 @@ final class MutableBigInt: BigIntNumber {
 
     // MARK: add / sub (engine: mutAdd*/mutSub*/setSub)
 
-    @discardableResult func setAdd(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setAddImpl32(x, n < 0, UInt32(n.magnitude)) }
-    @discardableResult func setAdd(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setAddImpl32(x, false, w) }
-    @discardableResult func setAdd(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setAddImpl64(x, l < 0, l.magnitude) }
-    @discardableResult func setAdd(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setAddImpl64(x, false, dw) }
-    @discardableResult func setAdd(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt { setAddImpl(x, y.meta, y.magia) }
+    @discardableResult public func setAdd(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setAddImpl32(x, n < 0, UInt32(n.magnitude)) }
+    @discardableResult public func setAdd(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setAddImpl32(x, false, w) }
+    @discardableResult public func setAdd(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setAddImpl64(x, l < 0, l.magnitude) }
+    @discardableResult public func setAdd(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setAddImpl64(x, false, dw) }
+    @discardableResult public func setAdd(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt { setAddImpl(x, y.meta, y.magia) }
 
-    @discardableResult func setSub(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setAddImpl32(x, n >= 0, UInt32(n.magnitude)) }
-    @discardableResult func setSub(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setAddImpl32(x, true, w) }
-    @discardableResult func setSub(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setAddImpl64(x, l >= 0, l.magnitude) }
-    @discardableResult func setSub(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setAddImpl64(x, true, dw) }
-    @discardableResult func setSub(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt { setAddImpl(x, y.meta.negate(), y.magia) }
+    @discardableResult public func setSub(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setAddImpl32(x, n >= 0, UInt32(n.magnitude)) }
+    @discardableResult public func setSub(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setAddImpl32(x, true, w) }
+    @discardableResult public func setSub(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setAddImpl64(x, l >= 0, l.magnitude) }
+    @discardableResult public func setSub(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setAddImpl64(x, true, dw) }
+    @discardableResult public func setSub(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt { setAddImpl(x, y.meta.negate(), y.magia) }
 
     @discardableResult private func setAddImpl32(_ x: BigIntNumber, _ ySign: Bool, _ yW: Limb) -> MutableBigInt {
         if !isSame(x) {
@@ -367,12 +367,12 @@ final class MutableBigInt: BigIntNumber {
 
     // MARK: mul (engine: setMul32/64/setMul)
 
-    @discardableResult func setMul(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setMulImpl(x, n < 0, UInt32(n.magnitude)) }
-    @discardableResult func setMul(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setMulImpl(x, false, w) }
-    @discardableResult func setMul(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setMulImpl(x, l < 0, l.magnitude) }
-    @discardableResult func setMul(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setMulImpl(x, false, dw) }
+    @discardableResult public func setMul(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setMulImpl(x, n < 0, UInt32(n.magnitude)) }
+    @discardableResult public func setMul(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setMulImpl(x, false, w) }
+    @discardableResult public func setMul(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setMulImpl(x, l < 0, l.magnitude) }
+    @discardableResult public func setMul(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setMulImpl(x, false, dw) }
 
-    @discardableResult func setMul(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+    @discardableResult public func setMul(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
         let xNormLen = Int(x.meta.normLen)
         let yNormLen = Int(y.meta.normLen)
         if yNormLen <= 2 { return setMulImpl(x, y.meta.signFlag, y.toULongMagnitude()) }
@@ -407,9 +407,9 @@ final class MutableBigInt: BigIntNumber {
 
     // MARK: shifts (engine: setShiftLeft/setShiftRight)
 
-    @discardableResult func mutShl(_ bitCount: Int) -> MutableBigInt { setShl(self, bitCount) }
+    @discardableResult public func mutShl(_ bitCount: Int) -> MutableBigInt { setShl(self, bitCount) }
 
-    @discardableResult func setShl(_ x: BigIntNumber, _ bitCount: Int) -> MutableBigInt {
+    @discardableResult public func setShl(_ x: BigIntNumber, _ bitCount: Int) -> MutableBigInt {
         if bitCount < 0 {
             throwNegBitCount()
         } else if bitCount == 0 || x.isZero() {
@@ -424,9 +424,9 @@ final class MutableBigInt: BigIntNumber {
         return self
     }
 
-    @discardableResult func mutUshr(_ bitCount: Int) -> MutableBigInt { setUshr(self, bitCount) }
+    @discardableResult public func mutUshr(_ bitCount: Int) -> MutableBigInt { setUshr(self, bitCount) }
 
-    @discardableResult func setUshr(_ x: BigIntNumber, _ bitCount: Int) -> MutableBigInt {
+    @discardableResult public func setUshr(_ x: BigIntNumber, _ bitCount: Int) -> MutableBigInt {
         let zBitLen = x.magnitudeBitLen() - bitCount
         if bitCount < 0 {
             throwNegBitCount()
@@ -443,9 +443,9 @@ final class MutableBigInt: BigIntNumber {
         return self
     }
 
-    @discardableResult func mutShr(_ bitCount: Int) -> MutableBigInt { setShr(self, bitCount) }
+    @discardableResult public func mutShr(_ bitCount: Int) -> MutableBigInt { setShr(self, bitCount) }
 
-    @discardableResult func setShr(_ x: BigIntNumber, _ bitCount: Int) -> MutableBigInt {
+    @discardableResult public func setShr(_ x: BigIntNumber, _ bitCount: Int) -> MutableBigInt {
         let zBitLen = x.magnitudeBitLen() - bitCount
         if bitCount < 0 {
             throwNegBitCount()
@@ -472,12 +472,12 @@ final class MutableBigInt: BigIntNumber {
     }
     // MARK: div (engine: setDiv32/setDivKnuth/setDivKnuth64/trySetDivFastPath*)
 
-    @discardableResult func setDiv(_ x: MutableBigInt, _ n: Int32) -> MutableBigInt { setDivImpl32(x, n < 0, UInt32(n.magnitude)) }
-    @discardableResult func setDiv(_ x: MutableBigInt, _ w: UInt32) -> MutableBigInt { setDivImpl32(x, false, w) }
-    @discardableResult func setDiv(_ x: MutableBigInt, _ l: Int64) -> MutableBigInt { setDivImpl64(x, l < 0, l.magnitude) }
-    @discardableResult func setDiv(_ x: MutableBigInt, _ dw: UInt64) -> MutableBigInt { setDivImpl64(x, false, dw) }
+    @discardableResult public func setDiv(_ x: MutableBigInt, _ n: Int32) -> MutableBigInt { setDivImpl32(x, n < 0, UInt32(n.magnitude)) }
+    @discardableResult public func setDiv(_ x: MutableBigInt, _ w: UInt32) -> MutableBigInt { setDivImpl32(x, false, w) }
+    @discardableResult public func setDiv(_ x: MutableBigInt, _ l: Int64) -> MutableBigInt { setDivImpl64(x, l < 0, l.magnitude) }
+    @discardableResult public func setDiv(_ x: MutableBigInt, _ dw: UInt64) -> MutableBigInt { setDivImpl64(x, false, dw) }
 
-    @discardableResult func setDiv(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+    @discardableResult public func setDiv(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
         let xNormLen = Int(x.meta.normLen)
         let yNormLen = Int(y.meta.normLen)
         ensureMagiaCapacityDiscard(xNormLen - yNormLen + 1)
@@ -545,12 +545,12 @@ final class MutableBigInt: BigIntNumber {
         return true
     }
 
-    @discardableResult func setRem(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setRemImpl(x, UInt64(n.magnitude)) }
-    @discardableResult func setRem(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setRemImpl(x, UInt64(w)) }
-    @discardableResult func setRem(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setRemImpl(x, l.magnitude) }
-    @discardableResult func setRem(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setRemImpl(x, dw) }
+    @discardableResult public func setRem(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setRemImpl(x, UInt64(n.magnitude)) }
+    @discardableResult public func setRem(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setRemImpl(x, UInt64(w)) }
+    @discardableResult public func setRem(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setRemImpl(x, l.magnitude) }
+    @discardableResult public func setRem(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setRemImpl(x, dw) }
 
-    @discardableResult func setRem(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+    @discardableResult public func setRem(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
         ensureMagiaCapacityCopy(min(Int(x.meta.normLen), Int(y.meta.normLen)))
         if trySetRemFastPath(x, y) { return self }
         if y.meta.normLen == 2 {
@@ -573,12 +573,12 @@ final class MutableBigInt: BigIntNumber {
 
     // MARK: mod (non-negative result; rejects negative modulus)
 
-    @discardableResult func setMod(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setModImpl(x, n < 0, UInt64(n.magnitude)) }
-    @discardableResult func setMod(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setModImpl(x, false, UInt64(w)) }
-    @discardableResult func setMod(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setModImpl(x, l < 0, l.magnitude) }
-    @discardableResult func setMod(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setModImpl(x, false, dw) }
+    @discardableResult public func setMod(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setModImpl(x, n < 0, UInt64(n.magnitude)) }
+    @discardableResult public func setMod(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setModImpl(x, false, UInt64(w)) }
+    @discardableResult public func setMod(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setModImpl(x, l < 0, l.magnitude) }
+    @discardableResult public func setMod(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setModImpl(x, false, dw) }
 
-    @discardableResult func setMod(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+    @discardableResult public func setMod(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
         if y.meta.isNegative { throwModNegDivisor() }
         setRem(x, y)
         if isNegative() { setAdd(self, y) }
@@ -597,24 +597,24 @@ final class MutableBigInt: BigIntNumber {
 
     // MARK: square (engine: setSqr/setSqrKaratsuba)
 
-    @discardableResult func setSqr(_ n: Int32) -> MutableBigInt { setSqr(UInt32(n.magnitude)) }
+    @discardableResult public func setSqr(_ n: Int32) -> MutableBigInt { setSqr(UInt32(n.magnitude)) }
 
-    @discardableResult func setSqr(_ w: UInt32) -> MutableBigInt {
+    @discardableResult public func setSqr(_ w: UInt32) -> MutableBigInt {
         let abs = UInt64(w)
         biStat(.MBI_SET_SQR_PRIMITIVE)
         return set(abs &* abs)
     }
 
-    @discardableResult func setSqr(_ l: Int64) -> MutableBigInt { setSqr(l.magnitude) }
+    @discardableResult public func setSqr(_ l: Int64) -> MutableBigInt { setSqr(l.magnitude) }
 
-    @discardableResult func setSqr(_ dw: UInt64) -> MutableBigInt {
+    @discardableResult public func setSqr(_ dw: UInt64) -> MutableBigInt {
         biStat(.MBI_SET_SQR_PRIMITIVE)
         let lo = dw &* dw
         let hi = unsignedMulHi(dw, dw)
         return set(false, hi, lo)
     }
 
-    @discardableResult func setSqr(_ x: BigIntNumber) -> MutableBigInt {
+    @discardableResult public func setSqr(_ x: BigIntNumber) -> MutableBigInt {
         verify(x.isNormalized())
         let xNormLen = Int(x.meta.normLen)
         if xNormLen == 0 { return setZero() }
@@ -630,7 +630,7 @@ final class MutableBigInt: BigIntNumber {
         }
     }
 
-    @discardableResult func karatsubaSetSqr(_ a: BigIntNumber) -> MutableBigInt {
+    @discardableResult public func karatsubaSetSqr(_ a: BigIntNumber) -> MutableBigInt {
         let n = Int(a.meta.normLen)
         if n <= 1 { return setSqr(a) }
         let k1 = (n + 1) / 2
@@ -646,7 +646,7 @@ final class MutableBigInt: BigIntNumber {
 
     // MARK: bit set/clear/mask
 
-    @discardableResult func setBit(_ bitIndex: Int) -> MutableBigInt {
+    @discardableResult public func setBit(_ bitIndex: Int) -> MutableBigInt {
         if bitIndex >= 0 {
             biStat(.MBI_SET_BITWISE_OP)
             let wordIndex = bitIndex >> 5
@@ -663,7 +663,7 @@ final class MutableBigInt: BigIntNumber {
         throwBoundsCheckViolation()
     }
 
-    @discardableResult func clearBit(_ bitIndex: Int) -> MutableBigInt {
+    @discardableResult public func clearBit(_ bitIndex: Int) -> MutableBigInt {
         if bitIndex >= 0 {
             biStat(.MBI_SET_BITWISE_OP)
             let wordIndex = bitIndex >> 5
@@ -678,7 +678,7 @@ final class MutableBigInt: BigIntNumber {
     }
 
     /// `this = abs(this) & ((2^bitWidth - 1) << bitIndex)`.
-    @discardableResult func applyBitMask(_ bitWidth: Int, _ bitIndex: Int = 0) -> MutableBigInt {
+    @discardableResult public func applyBitMask(_ bitWidth: Int, _ bitIndex: Int = 0) -> MutableBigInt {
         verify(isNormalized())
         biStat(.MBI_SET_BITWISE_OP)
         let myBitLen = magnitudeBitLen()
@@ -710,7 +710,7 @@ final class MutableBigInt: BigIntNumber {
 
     // MARK: bitwise and/or/xor (engine: setAnd/setOr/setXor; aliasing-safe)
 
-    @discardableResult func setAnd(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+    @discardableResult public func setAnd(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
         verify(x.isNormalized())
         verify(y.isNormalized())
         let xNormLen = Int(x.meta.normLen)
@@ -725,9 +725,9 @@ final class MutableBigInt: BigIntNumber {
         return self
     }
 
-    @discardableResult func mutAnd(_ y: BigIntNumber) -> MutableBigInt { setAnd(self, y) }
+    @discardableResult public func mutAnd(_ y: BigIntNumber) -> MutableBigInt { setAnd(self, y) }
 
-    @discardableResult func setOr(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+    @discardableResult public func setOr(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
         verify(x.isNormalized())
         verify(y.isNormalized())
         let xNormLen = Int(x.meta.normLen)
@@ -742,9 +742,9 @@ final class MutableBigInt: BigIntNumber {
         return self
     }
 
-    @discardableResult func mutOr(_ y: BigIntNumber) -> MutableBigInt { setOr(self, y) }
+    @discardableResult public func mutOr(_ y: BigIntNumber) -> MutableBigInt { setOr(self, y) }
 
-    @discardableResult func setXor(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+    @discardableResult public func setXor(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
         verify(x.isNormalized())
         verify(y.isNormalized())
         let xNormLen = Int(x.meta.normLen)
@@ -759,22 +759,22 @@ final class MutableBigInt: BigIntNumber {
         return self
     }
 
-    @discardableResult func mutXor(_ y: BigIntNumber) -> MutableBigInt { setXor(self, y) }
+    @discardableResult public func mutXor(_ y: BigIntNumber) -> MutableBigInt { setXor(self, y) }
 
     // MARK: addSquareOf / addAbsValueOf (accumulators)
 
-    func addSquareOf(_ n: Int32) {
+    public func addSquareOf(_ n: Int32) {
         biStat(.MBI_ADD_SQR_PRIMITIVE)
         BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_ADD_SUB_PRIMITIVE.ordinal] -= 1
         setAdd(self, UInt64(bitPattern: Int64(n) &* Int64(n)))
     }
-    @discardableResult func addSquareOf(_ w: UInt32) -> MutableBigInt {
+    @discardableResult public func addSquareOf(_ w: UInt32) -> MutableBigInt {
         BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_ADD_SUB_PRIMITIVE.ordinal] -= 1
         biStat(.MBI_ADD_SQR_PRIMITIVE)
         return setAdd(self, UInt64(w) &* UInt64(w))
     }
-    func addSquareOf(_ l: Int64) { _ = addSquareOf(l.magnitude) }
-    @discardableResult func addSquareOf(_ dw: UInt64) -> MutableBigInt {
+    public func addSquareOf(_ l: Int64) { _ = addSquareOf(l.magnitude) }
+    @discardableResult public func addSquareOf(_ dw: UInt64) -> MutableBigInt {
         biStat(.MBI_ADD_SQR_PRIMITIVE)
         let lo64 = dw &* dw
         if (dw >> 32) == 0 {
@@ -791,7 +791,7 @@ final class MutableBigInt: BigIntNumber {
         BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_ADD_SUB_BI.ordinal] -= 1
         return setAddImpl(self, Meta(signBit: 0, normLen: Int32(normLen)), tmp1)
     }
-    func addSquareOf(_ bi: BigIntNumber) {
+    public func addSquareOf(_ bi: BigIntNumber) {
         ensureTmp1CapacityZeroed(Int(bi.meta.normLen) * 2, .MBI_RESIZE_TMP1_SQR)
         let normLenSqr = magia_setSqr(tmp1, bi.magia, Int(bi.meta.normLen))
         setAddImpl(self, Meta(signBit: 0, normLen: Int32(normLenSqr)), tmp1)
@@ -800,54 +800,54 @@ final class MutableBigInt: BigIntNumber {
         biStat(.MBI_ADD_SQR_BI)
     }
 
-    func addAbsValueOf(_ n: Int32) { mutAddImpl32(false, UInt32(n.magnitude)) }
-    func addAbsValueOf(_ l: Int64) { mutAddImpl64(false, l.magnitude) }
-    func addAbsValueOf(_ bi: BigIntNumber) { setAddImpl(self, bi.meta.abs(), bi.magia) }
+    public func addAbsValueOf(_ n: Int32) { mutAddImpl32(false, UInt32(n.magnitude)) }
+    public func addAbsValueOf(_ l: Int64) { mutAddImpl64(false, l.magnitude) }
+    public func addAbsValueOf(_ bi: BigIntNumber) { setAddImpl(self, bi.meta.abs(), bi.magia) }
 
     // MARK: compound-assignment operators (mutate the lhs accumulator)
 
-    static func += (lhs: MutableBigInt, n: Int32) { lhs.mutAddImpl32(n < 0, UInt32(n.magnitude)) }
-    static func += (lhs: MutableBigInt, w: UInt32) { lhs.mutAddImpl32(false, w) }
-    static func += (lhs: MutableBigInt, l: Int64) { lhs.mutAddImpl64(l < 0, l.magnitude) }
-    static func += (lhs: MutableBigInt, dw: UInt64) { lhs.mutAddImpl64(false, dw) }
-    static func += (lhs: MutableBigInt, bi: BigIntNumber) { lhs.mutAddImpl(bi.meta, bi.magia) }
+    public static func += (lhs: MutableBigInt, n: Int32) { lhs.mutAddImpl32(n < 0, UInt32(n.magnitude)) }
+    public static func += (lhs: MutableBigInt, w: UInt32) { lhs.mutAddImpl32(false, w) }
+    public static func += (lhs: MutableBigInt, l: Int64) { lhs.mutAddImpl64(l < 0, l.magnitude) }
+    public static func += (lhs: MutableBigInt, dw: UInt64) { lhs.mutAddImpl64(false, dw) }
+    public static func += (lhs: MutableBigInt, bi: BigIntNumber) { lhs.mutAddImpl(bi.meta, bi.magia) }
 
-    static func -= (lhs: MutableBigInt, n: Int32) { lhs.mutAddImpl32(n > 0, UInt32(n.magnitude)) }
-    static func -= (lhs: MutableBigInt, w: UInt32) { lhs.mutAddImpl32(true, w) }
-    static func -= (lhs: MutableBigInt, l: Int64) { lhs.mutAddImpl64(l > 0, l.magnitude) }
-    static func -= (lhs: MutableBigInt, dw: UInt64) { lhs.mutAddImpl64(true, dw) }
-    static func -= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.mutAddImpl(bi.meta.negate(), bi.magia) }
+    public static func -= (lhs: MutableBigInt, n: Int32) { lhs.mutAddImpl32(n > 0, UInt32(n.magnitude)) }
+    public static func -= (lhs: MutableBigInt, w: UInt32) { lhs.mutAddImpl32(true, w) }
+    public static func -= (lhs: MutableBigInt, l: Int64) { lhs.mutAddImpl64(l > 0, l.magnitude) }
+    public static func -= (lhs: MutableBigInt, dw: UInt64) { lhs.mutAddImpl64(true, dw) }
+    public static func -= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.mutAddImpl(bi.meta.negate(), bi.magia) }
 
-    static func *= (lhs: MutableBigInt, n: Int32) { lhs.setMul(lhs, n) }
-    static func *= (lhs: MutableBigInt, w: UInt32) { lhs.setMul(lhs, w) }
-    static func *= (lhs: MutableBigInt, l: Int64) { lhs.setMul(lhs, l) }
-    static func *= (lhs: MutableBigInt, dw: UInt64) { lhs.setMul(lhs, dw) }
-    static func *= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.setMul(lhs, bi) }
+    public static func *= (lhs: MutableBigInt, n: Int32) { lhs.setMul(lhs, n) }
+    public static func *= (lhs: MutableBigInt, w: UInt32) { lhs.setMul(lhs, w) }
+    public static func *= (lhs: MutableBigInt, l: Int64) { lhs.setMul(lhs, l) }
+    public static func *= (lhs: MutableBigInt, dw: UInt64) { lhs.setMul(lhs, dw) }
+    public static func *= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.setMul(lhs, bi) }
 
-    static func /= (lhs: MutableBigInt, n: Int32) { lhs.setDiv(lhs, n) }
-    static func /= (lhs: MutableBigInt, w: UInt32) { lhs.setDiv(lhs, w) }
-    static func /= (lhs: MutableBigInt, l: Int64) { lhs.setDiv(lhs, l) }
-    static func /= (lhs: MutableBigInt, dw: UInt64) { lhs.setDiv(lhs, dw) }
-    static func /= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.setDiv(lhs, bi) }
+    public static func /= (lhs: MutableBigInt, n: Int32) { lhs.setDiv(lhs, n) }
+    public static func /= (lhs: MutableBigInt, w: UInt32) { lhs.setDiv(lhs, w) }
+    public static func /= (lhs: MutableBigInt, l: Int64) { lhs.setDiv(lhs, l) }
+    public static func /= (lhs: MutableBigInt, dw: UInt64) { lhs.setDiv(lhs, dw) }
+    public static func /= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.setDiv(lhs, bi) }
 
-    static func %= (lhs: MutableBigInt, n: Int32) { lhs.setRem(lhs, n) }
-    static func %= (lhs: MutableBigInt, w: UInt32) { lhs.setRem(lhs, w) }
-    static func %= (lhs: MutableBigInt, l: Int64) { lhs.setRem(lhs, l) }
-    static func %= (lhs: MutableBigInt, dw: UInt64) { lhs.setRem(lhs, dw) }
-    static func %= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.setRem(lhs, bi) }
+    public static func %= (lhs: MutableBigInt, n: Int32) { lhs.setRem(lhs, n) }
+    public static func %= (lhs: MutableBigInt, w: UInt32) { lhs.setRem(lhs, w) }
+    public static func %= (lhs: MutableBigInt, l: Int64) { lhs.setRem(lhs, l) }
+    public static func %= (lhs: MutableBigInt, dw: UInt64) { lhs.setRem(lhs, dw) }
+    public static func %= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.setRem(lhs, bi) }
 
     // MARK: pow / montgomeryRedc (Phase 3 BigIntAlgorithms)
 
-    @discardableResult func setPow(_ x: BigIntNumber, _ exp: Int) -> MutableBigInt {
+    @discardableResult public func setPow(_ x: BigIntNumber, _ exp: Int) -> MutableBigInt {
         if BigIntAlgorithms.tryPowFastPath(x, exp, self) { return self }
         let base: BigIntNumber = isSame(x) ? x.toBigInt() : x   // ret must not alias base
         BigIntAlgorithms.powLeftToRight(base, exp, self)
         biStat(.MBI_SET_POW)
         return self
     }
-    @discardableResult func mutPow(_ exp: Int) -> MutableBigInt { setPow(self, exp) }
+    @discardableResult public func mutPow(_ exp: Int) -> MutableBigInt { setPow(self, exp) }
 
-    @discardableResult func montgomeryRedc(_ modulus: BigInt, _ np: Limb) -> MutableBigInt {
+    @discardableResult public func montgomeryRedc(_ modulus: BigInt, _ np: Limb) -> MutableBigInt {
         precondition(modulus.isOdd())
         let k = Int(modulus.meta.normLen)
         precondition(Int(meta.normLen) <= 2 * k + 1)

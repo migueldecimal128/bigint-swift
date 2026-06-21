@@ -10,9 +10,9 @@
 // expressed here via `.compareTo(...)`. The reference-identity guard
 // `n !== tmp` becomes `(n as? MutableBigInt) !== tmp`.
 
-enum BigIntPrime {
+public enum BigIntPrime {
 
-    static func nextProbablePrime(_ n: BigIntNumber) -> BigInt {
+    public static func nextProbablePrime(_ n: BigIntNumber) -> BigInt {
         if n.compareTo(Int32(1)) <= 0 {
             precondition(n.compareTo(Int32(0)) >= 0)
             return BigInt.TWO
@@ -27,11 +27,11 @@ enum BigIntPrime {
     }
 
     /// Returns `true` if `n` is a probable prime (Baillie–PSW test).
-    static func isProbablePrime(_ n: BigIntNumber, _ tmp: MutableBigInt = MutableBigInt()) -> Bool {
+    public static func isProbablePrime(_ n: BigIntNumber, _ tmp: MutableBigInt = MutableBigInt()) -> Bool {
         isBailliePSWProbablePrime(n, tmp)
     }
 
-    static func isBailliePSWProbablePrime(_ n: BigIntNumber, _ tmp: MutableBigInt = MutableBigInt()) -> Bool {
+    public static func isBailliePSWProbablePrime(_ n: BigIntNumber, _ tmp: MutableBigInt = MutableBigInt()) -> Bool {
         precondition((n as? MutableBigInt) !== tmp)
         precondition(!n.isNegative())
         switch classifyBySmallPrimes(n, tmp) {
@@ -89,7 +89,7 @@ enum BigIntPrime {
     }
 
     /// Strong Miller–Rabin probable-prime test on odd `n >= 3` for the given `bases`.
-    static func isMillerRabinProbablePrime(
+    public static func isMillerRabinProbablePrime(
         _ n: BigInt, _ bases: [Int32],
         _ tmpP: MutableBigInt? = nil
     ) -> Bool {
@@ -127,7 +127,7 @@ enum BigIntPrime {
     private static let MILLER_RABIN_BASE_2: [Int32] = [2]
 
     /// Strong Miller–Rabin probable-prime test to base 2 (the Baillie–PSW MR stage).
-    static func isMillerRabinProbablePrimeBase2(_ n: BigInt, _ tmp: MutableBigInt? = nil) -> Bool {
+    public static func isMillerRabinProbablePrimeBase2(_ n: BigInt, _ tmp: MutableBigInt? = nil) -> Bool {
         isMillerRabinProbablePrime(n, MILLER_RABIN_BASE_2, tmp)
     }
 
@@ -143,15 +143,15 @@ enum BigIntPrime {
         1795265022
     ]
 
-    static func isMillerRabinProbablePrimeJaeschke(_ n: BigInt, _ tmp: MutableBigInt?) -> Bool {
+    public static func isMillerRabinProbablePrimeJaeschke(_ n: BigInt, _ tmp: MutableBigInt?) -> Bool {
         isMillerRabinProbablePrime(n, MILLER_RABIN_JAESCHKE_BASES, tmp)
     }
 
     /// Computes the Jacobi symbol `(a | n)`.
-    static func jacobi(_ a: Int32, _ n: Int32) -> Int { jacobi(a, BigInt.from(n)) }
+    public static func jacobi(_ a: Int32, _ n: Int32) -> Int { jacobi(a, BigInt.from(n)) }
 
     /// Computes the Jacobi symbol `(a | n)`; returns -1, 0, or 1.
-    static func jacobi(_ a: Int32, _ n: BigInt) -> Int {
+    public static func jacobi(_ a: Int32, _ n: BigInt) -> Int {
         precondition(n.compareTo(Int32(0)) > 0 && n.isOdd())
         var v = n.toMutableBigInt()
         var u = MutableBigInt(a)
@@ -174,16 +174,16 @@ enum BigIntPrime {
     }
 
     /// Parameters `(D, P, Q)` for Lucas sequences, Selfridge-selected.
-    struct LucasParams {
-        let D: Int32
-        let P: Int32
-        let Q: Int32
+    public struct LucasParams: Sendable {
+        public let D: Int32
+        public let P: Int32
+        public let Q: Int32
     }
 
     private static let LUCAS_COMPOSITE = LucasParams(D: 0, P: 0, Q: 0)
 
     /// Selects Lucas parameters `(D, P, Q)` via the Selfridge method.
-    static func selectSelfridgeParams(_ n: BigInt) -> LucasParams {
+    public static func selectSelfridgeParams(_ n: BigInt) -> LucasParams {
         precondition(n.isPositive() && n.isOdd())
         if n.isPerfectSquare() { return LUCAS_COMPOSITE }
         var D: Int32 = 5
@@ -211,7 +211,7 @@ enum BigIntPrime {
     }
 
     /// Strong Lucas probable-prime test on `n` with Lucas params `params`.
-    static func isStrongLucasProbablePrime(
+    public static func isStrongLucasProbablePrime(
         _ n: BigInt,
         _ params: LucasParams
     ) -> Bool {
@@ -243,7 +243,7 @@ enum BigIntPrime {
 
     /// Computes Lucas sequence values `U_d`, `V_d`, `Q^d (mod n)` (allocation-free
     /// variant using a ModContext). `d` is odd.
-    static func lucasUVQk(
+    public static func lucasUVQk(
         _ modCtx: ModContext,
         _ d: BigInt,   // odd
         _ D: Int32,
@@ -310,7 +310,7 @@ enum BigIntPrime {
 
     /// Computes Lucas sequence values `U_d`, `V_d`, `Q^d (mod n)` using plain
     /// BigInt arithmetic (left-to-right binary method). `d` is odd.
-    static func lucasUVQk_BigInt(
+    public static func lucasUVQk_BigInt(
         _ n: BigInt,
         _ d: BigInt,   // odd
         _ D: Int32,
