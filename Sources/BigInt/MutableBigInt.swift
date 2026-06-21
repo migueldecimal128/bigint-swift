@@ -25,6 +25,9 @@ private func _setMul(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -
     setMul(z, x, xn, y, yn)
 }
 private func _setSqr(_ z: Magia, _ x: Magia, _ xn: Int) -> Int { setSqr(z, x, xn) }
+private func _setAnd(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -> Int { setAnd(z, x, xn, y, yn) }
+private func _setOr(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -> Int { setOr(z, x, xn, y, yn) }
+private func _setXor(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -> Int { setXor(z, x, xn, y, yn) }
 private func _trySetDivFastPath(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -> Int {
     trySetDivFastPath(z, x, xn, y, yn)
 }
@@ -663,11 +666,127 @@ final class MutableBigInt: BigIntNumber {
         biStat(.MBI_SET_SQR_KARATSUBA)
         return self
     }
+
+    // MARK: bit set/clear/mask
+
+    @discardableResult func setBit(_ bitIndex: Int) -> MutableBigInt {
+        if bitIndex >= 0 {
+            biStat(.MBI_SET_BITWISE_OP)
+            let wordIndex = bitIndex >> 5
+            let isolatedBit: Limb = 1 << (bitIndex & 0x1F)
+            if wordIndex < Int(meta.normLen) {
+                magia[wordIndex] = magia[wordIndex] | isolatedBit
+                return self
+            }
+            ensureMagiaCapacityCopyZeroExtend(wordIndex + 1)
+            magia[wordIndex] = isolatedBit
+            updateMeta(Meta(signBit: meta.signBit, normLen: Int32(wordIndex + 1)))
+            return self
+        }
+        throwBoundsCheckViolation()
+    }
+
+    @discardableResult func clearBit(_ bitIndex: Int) -> MutableBigInt {
+        if bitIndex >= 0 {
+            biStat(.MBI_SET_BITWISE_OP)
+            let wordIndex = bitIndex >> 5
+            if wordIndex < Int(meta.normLen) {
+                let isolatedBitMask: Limb = ~(1 << (bitIndex & 0x1F))
+                magia[wordIndex] = magia[wordIndex] & isolatedBitMask
+                updateMeta(Meta(signBit: meta.signBit, normLen: Int32(normLen(magia, Int(meta.normLen)))))
+            }
+            return self
+        }
+        throwBoundsCheckViolation()
+    }
+
+    /// `this = abs(this) & ((2^bitWidth - 1) << bitIndex)`.
+    @discardableResult func applyBitMask(_ bitWidth: Int, _ bitIndex: Int = 0) -> MutableBigInt {
+        verify(isNormalized())
+        biStat(.MBI_SET_BITWISE_OP)
+        let myBitLen = magnitudeBitLen()
+        if bitIndex < 0 || bitWidth < 0 { throwInvalidBitLenRange() }
+        if bitWidth == 0 || bitIndex >= myBitLen { return setZero() }
+        if bitWidth == 1 && !testBit(bitIndex) { return setZero() }
+        if bitWidth == 1 {
+            let limbIndex = bitIndex >> 5
+            magia.fill(0, 0, limbIndex)
+            magia[limbIndex] = Limb(1) << (bitIndex & 0x1F)
+            updateMeta(Meta(Int32(limbIndex + 1)))
+            verify(isNormalized())
+            return self
+        }
+        // more than 1 bit wide and some overlap
+        let clampedBitLen = min(bitWidth + bitIndex, myBitLen)
+        let normLen0 = (clampedBitLen + 0x1F) >> 5
+        let nlz = (normLen0 << 5) - clampedBitLen
+        magia[normLen0 - 1] = magia[normLen0 - 1] & (Limb.max >> nlz)
+        let loIndex = bitIndex >> 5
+        magia.fill(0, 0, loIndex)
+        let ctz = bitIndex & 0x1F
+        magia[loIndex] = magia[loIndex] & (Limb.max << ctz)
+        let normLenV = normLen(magia, normLen0)
+        updateMeta(Meta(Int32(normLenV)))
+        verify(isNormalized())
+        return self
+    }
+
+    // MARK: bitwise and/or/xor (engine: setAnd/setOr/setXor; aliasing-safe)
+
+    @discardableResult func setAnd(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+        verify(x.isNormalized())
+        verify(y.isNormalized())
+        let xNormLen = Int(x.meta.normLen)
+        let yNormLen = Int(y.meta.normLen)
+        let minNormLen = min(xNormLen, yNormLen)
+        if minNormLen == 0 { return setZero() }
+        let xMagia = x.magia
+        let yMagia = y.magia
+        ensureMagiaCapacityDiscard(minNormLen)
+        updateMeta(Meta(signBit: 0, normLen: Int32(_setAnd(magia, xMagia, xNormLen, yMagia, yNormLen))))
+        verify(isNormalized())
+        return self
+    }
+
+    @discardableResult func mutAnd(_ y: BigIntNumber) -> MutableBigInt { setAnd(self, y) }
+
+    @discardableResult func setOr(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+        verify(x.isNormalized())
+        verify(y.isNormalized())
+        let xNormLen = Int(x.meta.normLen)
+        let yNormLen = Int(y.meta.normLen)
+        let maxNormLen = max(xNormLen, yNormLen)
+        if maxNormLen == 0 { return setZero() }
+        let xMagia = x.magia
+        let yMagia = y.magia
+        ensureMagiaCapacityDiscard(maxNormLen)
+        updateMeta(Meta(signBit: 0, normLen: Int32(_setOr(magia, xMagia, xNormLen, yMagia, yNormLen))))
+        verify(isNormalized())
+        return self
+    }
+
+    @discardableResult func mutOr(_ y: BigIntNumber) -> MutableBigInt { setOr(self, y) }
+
+    @discardableResult func setXor(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+        verify(x.isNormalized())
+        verify(y.isNormalized())
+        let xNormLen = Int(x.meta.normLen)
+        let yNormLen = Int(y.meta.normLen)
+        let maxNormLen = max(xNormLen, yNormLen)
+        if maxNormLen == 0 { return setZero() }
+        let xMagia = x.magia
+        let yMagia = y.magia
+        ensureMagiaCapacityDiscard(maxNormLen)
+        updateMeta(Meta(signBit: 0, normLen: Int32(_setXor(magia, xMagia, xNormLen, yMagia, yNormLen))))
+        verify(isNormalized())
+        return self
+    }
+
+    @discardableResult func mutXor(_ y: BigIntNumber) -> MutableBigInt { setXor(self, y) }
 }
 
 // ============================================================================
 // PHASE 2 REMAINING — MutableBigInt (MutableBigInt.kt):
 //   setPow/mutPow (-> Phase 3 BigIntAlgorithms.tryPowFastPath/powLeftToRight),
-//   addSquareOf, addAbsValueOf, setBit/clearBit/applyBitMask,
-//   setAnd/setOr/setXor, montgomeryRedc, and the +=/-=/*=/... operators.
+//   addSquareOf, addAbsValueOf, montgomeryRedc, and the +=/-=/*=/... operators.
 // ============================================================================
