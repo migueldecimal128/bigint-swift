@@ -18,7 +18,7 @@ transliteration**, not a rewrite. Keep the call graph and function names 1:1.
 |---|---|
 | `IntArray` magnitude (`Magia`) | `final class Magia` |
 | limb cell (`Int`, unsigned semantics) | `Limb` = `UInt32` |
-| `Long` | `Int64` |
+| `Long` (unsigned-magnitude dword) | `UInt64` (see overflow policy) |
 | `ULong` | `UInt64` |
 | `Int` packed value (e.g. `Meta`) | `Int32` |
 | `Int` loop counter / length / index | `Int` |
@@ -27,32 +27,17 @@ transliteration**, not a rewrite. Keep the call graph and function names 1:1.
 ## Operator / idiom mapping
 | Kotlin | Swift | Note |
 |---|---|---|
-| `x[i].toDws()` | `x[i].toDws()` | `Limb → Int64`, zero-extended |
+| `x[i].toDws()` | `x[i].toDw()` | `Limb → UInt64`, zero-extended (UNSIGNED — see policy) |
 | `dw32(n)` | `dw32(n)` | `Limb → UInt64`, zero-extended |
 | `t.toInt()` (store to limb) | `t.toLimb()` | low 32 bits → `Limb` |
 | `t.toInt()` (sign-mask math) | `t.toInt32()` | low 32 bits → `Int32` |
 | `a + b`, `a - b`, `a * b` (limb math) | `a &+ b`, `a &- b`, `a &* b` | **wrapping** — see policy below |
-| `x ushr n` | `x.ushr(n)` | **LOGICAL** right shift (defined on `Int64`/`Int32`) |
-| `x shr n` | `x >> n` | arithmetic right shift on a signed type |
+| `x ushr n` (dword) | `x >> n` | `>>` on `UInt64` IS logical — no helper |
+| `x ushr n` (Meta `Int32`) | `x.ushr(n)` | logical-shift helper, only for the signed packed `Meta` |
+| `x shr n` (Meta `Int32`) | `x >> n` | arithmetic right shift on signed `Int32` |
 | `x shl n` | `x << n` or `x &<< n` | use `&<<` where Kotlin relies on wraparound (e.g. `1 shl 31`) |
 | `-x` where x may be Int.min | `0 &- x` | Kotlin Int negate wraps; Swift `-` traps |
-
-## Overflow policy — WRAPPING OPERATORS UNIFORMLY
-Kotlin/JVM `Long` and `Int` primitives are two's-complement and wrap silently;
-Swift's `+ - *` **trap** on overflow. To be bit-identical to the source AND to
-never trap, map `Long → Int64`, `Int → Int32`, and use the **wrapping operators
-`&+  &-  &*`** for all limb/dword arithmetic — regardless of whether a given
-expression is provably in range.
-
-Why this matters concretely: a limb*limb product is ≤ (2³²−1)² ≈ 2⁶⁴−2³³. That
-fits in 64 *unsigned* bits, but the source accumulates in **signed `Long`**, so
-any product with bit 63 set exceeds `Int64.max` — plain Swift `*` would trap
-where Kotlin wraps. (Computing in `UInt64` would also avoid the trap, but that
-diverges from the source's signed accumulators; we mirror `Long` with `Int64` +
-wrapping instead, keeping the transliteration mechanical.) High words are then
-read with `.ushr(32)` (logical), so the correct bit pattern is preserved.
-| `a.inv()` | `~a` | |
-| `3.inv()` | `~3` | |
+| `a.inv()` / `3.inv()` | `~a` / `~3` | |
 | `dw == 0uL` / `carry == 0L` | `... == 0` | |
 | `verify { cond }` | `verify(cond)` | `@autoclosure`; drop the braces |
 | `return throwX()` | `throwX()` | throwers are `-> Never`; drop `return` |
@@ -60,16 +45,34 @@ read with `.ushr(32)` (logical), so the correct bit pattern is preserved.
 | `IntArray.size` | `Magia.size` | capacity, NOT logical length |
 | `min`/`max` | `min`/`max` | `Swift.min/max` |
 
+## Overflow policy — UNSIGNED dwords + WRAPPING OPERATORS
+The limbs are unsigned magnitudes, so dword temporaries map to **`UInt64`**, not
+Kotlin's signed `Long`. (Kotlin uses signed `Long` + `ushr` only to work around
+the JVM's awkward unsigned support — `toDws` = "to double-word **signed**" is a
+workaround, not the intent.) `UInt64` is the faithful-to-intent choice and is
+strictly cleaner:
+
+- **No overflow to reason about.** A limb*limb product is ≤ (2³²−1)² < 2⁶⁴, and
+  the schoolbook accumulator stays ≤ 2⁶⁴−1 — both fit in `UInt64`.
+- **`ushr` becomes plain `>>`.** Right shift on an unsigned type is logical by
+  definition, so the custom dword `.ushr()` helper disappears.
+- **The borrow trick still works.** `t = a &- b &- borrow` wraps (two's
+  complement) so bit 63 is set on underflow; `t >> 63` reads the borrow bit.
+
+Still, per uniform policy, use the **wrapping operators `&+ &- &*`** for all
+limb arithmetic (mirrors Kotlin's two's-complement primitives and never traps,
+even at the 2⁶⁴ boundary). `Int32` is kept only for `Meta` and the one `setSub`
+nonzero-mask idiom (a genuinely signed view of a single limb).
+
 ## Critical subtleties (these are where bugs hide)
-- **`ushr` on a signed value is load-bearing.** Subtraction computes
-  `borrow = t ushr 63` on an `Int64` `t` that goes negative on underflow → the
-  logical shift yields `1`. `t >> 63` (arithmetic) would yield `-1`. Always use
-  `.ushr(_:)`.
-- **Carry `ushr 32` on non-negative `t`** is also `.ushr(32)` for uniformity.
-- **`toLong()` of a `ULong`** = `Int64(bitPattern: dw)` (bit reinterpret), NOT
-  `Int64(dw)` (which would trap on values ≥ 2^63).
+- **The borrow bit comes from a wrapped `UInt64`.** Subtraction computes
+  `t = a &- b &- borrow` on `UInt64`; on underflow it wraps so bit 63 is set,
+  and `borrow = t >> 63` reads it. The `&-` (wrapping) is essential — plain `-`
+  would trap on the underflow.
+- **High word via `>> 32`** is logical because the dword is `UInt64`.
 - **nonZeroMask trick** (`setSub`): `(zi or -zi) shr 31` with `zi` a signed
-  `Int32` → `(zi | (0 &- zi)) >> 31`, then widen to `Int` for index math.
+  `Int32` (`t.toInt32()`) → `(zi | (0 &- zi)) >> 31`, then widen to `Int` for
+  index math.
 - **Member/free-function name collisions**: a free engine function (e.g.
   `normLen`) is shadowed by a same-named member inside a type's scope — inline
   or rename at that one call site (Swift resolves by name, not by arity).
