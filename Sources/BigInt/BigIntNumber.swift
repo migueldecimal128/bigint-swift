@@ -258,6 +258,12 @@ extension BigIntNumber {
 
     /// Hex string, `0x`-prefixed, uppercase (negatives prefixed with `-`).
     func toHexString() -> String { BigIntParsePrint.toHexString(self) }
+
+    // MARK: algorithms (Phase 3 BigIntAlgorithms)
+
+    /// Integer square root: largest r with r*r ≤ self < (r+1)^2.
+    func isqrt() -> BigInt { BigIntAlgorithms.isqrt(self) }
+    func isPerfectSquare() -> Bool { BigIntAlgorithms.isPerfectSquare(self) }
 }
 
 // Static debug helper (Kotlin companion `validateNormLenAndInjectPoison`).

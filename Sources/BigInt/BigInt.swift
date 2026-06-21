@@ -198,6 +198,41 @@ struct BigInt: BigIntNumber, Comparable {
         isNegative() == other.isNegative() ? self : negate()
     }
 
+    // MARK: square / pow / gcd / algorithms (Phase 3 BigIntAlgorithms)
+
+    func sqr() -> BigInt {
+        if isNotZero() {
+            let normLen = Int(meta.normLen)
+            if normLen < KARATSUBA_SQR_THRESHOLD {
+                let z = Magia(2 * normLen)
+                let zNormLen = magia_setSqr(z, magia, normLen)
+                return BigInt.fromNormalizedNonZero(z, zNormLen)
+            }
+            let z = Magia(2 * normLen + 1)
+            let t = Magia(3 * ((normLen + 1) / 2) + 3)
+            let zNormLen = magia_setSqrKaratsuba(z, magia, normLen, t)
+            return BigInt.fromNormalizedNonZero(z, zNormLen)
+        }
+        return BigInt.ZERO
+    }
+
+    func pow(_ exp: Int) -> BigInt { BigIntAlgorithms.pow(self, exp) }
+    func toMutableBigInt() -> MutableBigInt { MutableBigInt(self) }
+
+    /// `2^bitIndex` as a BigInt.
+    static func withSetBit(_ bitIndex: Int) -> BigInt {
+        if bitIndex < 0 { throwNegBitIndex() }
+        if bitIndex == 0 { return ONE }
+        let magia = magia_newWithBitLen(bitIndex + 1)
+        magia[magia.size - 1] = 1 << (bitIndex & 0x1F)
+        biStat(.BI_CONSTRUCT_BITWISE)
+        return fromNormalizedNonZero(magia)
+    }
+
+    static func factorial(_ n: Int) -> BigInt { BigIntAlgorithms.factorial(n) }
+    static func gcd(_ a: BigInt, _ b: BigInt) -> BigInt { BigIntAlgorithms.gcd(a, b) }
+    static func lcm(_ a: BigInt, _ b: BigInt) -> BigInt { BigIntAlgorithms.lcm(a, b) }
+
     // MARK: add / sub impls (engine: mutAdd*/mutSub*/setSub)
 
     func addImpl(_ isSub: Bool, _ other: BigIntNumber) -> BigInt {

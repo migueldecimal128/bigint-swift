@@ -835,10 +835,29 @@ final class MutableBigInt: BigIntNumber {
     static func %= (lhs: MutableBigInt, l: Int64) { lhs.setRem(lhs, l) }
     static func %= (lhs: MutableBigInt, dw: UInt64) { lhs.setRem(lhs, dw) }
     static func %= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.setRem(lhs, bi) }
+
+    // MARK: pow / montgomeryRedc (Phase 3 BigIntAlgorithms)
+
+    @discardableResult func setPow(_ x: BigIntNumber, _ exp: Int) -> MutableBigInt {
+        if BigIntAlgorithms.tryPowFastPath(x, exp, self) { return self }
+        let base: BigIntNumber = isSame(x) ? x.toBigInt() : x   // ret must not alias base
+        BigIntAlgorithms.powLeftToRight(base, exp, self)
+        biStat(.MBI_SET_POW)
+        return self
+    }
+    @discardableResult func mutPow(_ exp: Int) -> MutableBigInt { setPow(self, exp) }
+
+    @discardableResult func montgomeryRedc(_ modulus: BigInt, _ np: Limb) -> MutableBigInt {
+        precondition(modulus.isOdd())
+        let k = Int(modulus.meta.normLen)
+        precondition(Int(meta.normLen) <= 2 * k + 1)
+        ensureMagiaCapacityCopy(2 * k + 1)
+        let normLen = BigIntAlgorithms.montgomeryRedc(magia, Int(meta.normLen), modulus.magia, k, np)
+        updateMeta(Meta(Int32(normLen)))
+        biStat(.MBI_MONTGOMERY_REDC)
+        return self
+    }
 }
 
-// ============================================================================
-// PHASE 2 REMAINING — MutableBigInt: setPow/mutPow + montgomeryRedc (both ->
-// Phase 3 BigIntAlgorithms). equals/hashCode intentionally omitted (MutableBigInt
-// is non-hashable by design; EQ/NE on BigIntNumber provide numeric comparison).
-// ============================================================================
+// MutableBigInt: equals/hashCode intentionally omitted (non-hashable by design;
+// EQ/NE on BigIntNumber provide numeric comparison).
