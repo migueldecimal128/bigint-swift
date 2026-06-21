@@ -154,6 +154,23 @@ struct BigInt: BigIntNumber, Comparable {
                       biMagnitude.magia.copyOf(Int(biMagnitude.meta.normLen)))
     }
 
+    // MARK: text factories (Phase 3 BigIntParsePrint)
+
+    static func from(_ str: String) -> BigInt { from(StringLatin1Iterator(str)) }
+    static func from(_ str: String, _ off: Int, _ len: Int) -> BigInt {
+        from(StringLatin1Iterator(str, off, len))
+    }
+    private static func from(_ src: Latin1Iterator) -> BigInt {
+        biStat(.BI_CONSTRUCT_TEXT)
+        return fromNonNormalizedOrZero(src.peek() == "-", BigIntParsePrint.from(src))
+    }
+
+    static func fromHex(_ str: String) -> BigInt { fromHex(StringLatin1Iterator(str)) }
+    private static func fromHex(_ src: Latin1Iterator) -> BigInt {
+        biStat(.BI_CONSTRUCT_TEXT)
+        return fromNormalizedOrZero(src.peek() == "-", BigIntParsePrint.fromHex(src))
+    }
+
     // MARK: BigIntNumber
 
     func toBigInt() -> BigInt { self }   // already an immutable snapshot

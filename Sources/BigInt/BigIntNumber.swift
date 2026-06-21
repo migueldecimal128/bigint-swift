@@ -250,6 +250,14 @@ extension BigIntNumber {
         }
         return h
     }
+
+    // MARK: string conversions (Phase 3 BigIntParsePrint)
+
+    /// Decimal string (negatives prefixed with `-`).
+    func toString() -> String { BigIntParsePrint.toString(meta.isNegative, magia, Int(meta.normLen)) }
+
+    /// Hex string, `0x`-prefixed, uppercase (negatives prefixed with `-`).
+    func toHexString() -> String { BigIntParsePrint.toHexString(self) }
 }
 
 // Static debug helper (Kotlin companion `validateNormLenAndInjectPoison`).
