@@ -233,6 +233,166 @@ struct BigInt: BigIntNumber, Comparable {
     static func gcd(_ a: BigInt, _ b: BigInt) -> BigInt { BigIntAlgorithms.gcd(a, b) }
     static func lcm(_ a: BigInt, _ b: BigInt) -> BigInt { BigIntAlgorithms.lcm(a, b) }
 
+    // MARK: bit operations (magnitude-only; non-negative results)
+
+    func and(_ other: BigInt) -> BigInt {
+        var iLast = min(Int(meta.normLen), Int(other.meta.normLen))
+        let thisMagia = magia, otherMagia = other.magia
+        if iLast <= thisMagia.size && iLast <= otherMagia.size {
+            repeat {
+                iLast -= 1
+                if iLast < 0 { return BigInt.ZERO }
+            } while (thisMagia[iLast] & otherMagia[iLast]) == 0
+            let z = Magia(iLast + 1)
+            while iLast >= 0 {
+                z[iLast] = thisMagia[iLast] & otherMagia[iLast]
+                iLast -= 1
+            }
+            return BigInt.fromNormalizedNonZero(z)
+        }
+        throwBoundsCheckViolation()
+    }
+
+    func or(_ other: BigInt) -> BigInt {
+        let thisNormLen = Int(meta.normLen), otherNormLen = Int(other.meta.normLen)
+        let maxLen = max(thisNormLen, otherNormLen)
+        if maxLen > 0 {
+            let z = Magia(maxLen)
+            return BigInt.fromNormalizedNonZero(z, magia_setOr(z, magia, thisNormLen, other.magia, otherNormLen))
+        }
+        return BigInt.ZERO
+    }
+
+    func xor(_ other: BigInt) -> BigInt {
+        let thisNormLen = Int(meta.normLen), otherNormLen = Int(other.meta.normLen)
+        let maxLen = max(thisNormLen, otherNormLen)
+        let z = Magia(maxLen)
+        let zNormLen = magia_setXor(z, magia, thisNormLen, other.magia, otherNormLen)
+        if zNormLen > 0 { return BigInt.fromNormalizedNonZero(z, zNormLen) }
+        return BigInt.ZERO
+    }
+
+    func ushr(_ bitCount: Int) -> BigInt {
+        if bitCount > 0 {
+            let newBitLen = magia_normBitLen(magia, Int(meta.normLen)) - bitCount
+            if newBitLen <= 0 { return BigInt.ZERO }
+            let z = magia_newWithBitLen(newBitLen)
+            return BigInt.fromNormalizedNonZero(z, magia_setShiftRight(z, magia, Int(meta.normLen), bitCount))
+        }
+        if bitCount == 0 { return abs() }
+        throwNegBitCount()
+    }
+
+    func shr(_ bitCount: Int) -> BigInt {
+        if bitCount > 0 {
+            let newBitLen = magia_normBitLen(magia, Int(meta.normLen)) - bitCount
+            if newBitLen <= 0 { return meta.isNegative ? BigInt.NEG_ONE : BigInt.ZERO }
+            let z = magia_newWithBitLen(newBitLen)
+            let zNormLen = magia_setShiftRight(z, magia, Int(meta.normLen), bitCount)
+            verify(zNormLen == z.size)
+            let needsIncrement = meta.isNegative && magia_testAnyBitInLowerN(magia, Int(meta.normLen), bitCount)
+            if !needsIncrement { return BigInt.fromNormalizedNonZero(meta.signFlag, z, zNormLen) }
+            var i = 0
+            repeat {
+                let t = z[i] &+ 1
+                z[i] = t
+                if t != 0 { return BigInt.fromNormalizedNonZero(meta.signFlag, z, zNormLen) }
+                i += 1
+            } while i < z.size
+            let z1 = Magia(i + 1)
+            z1[i] = 1
+            return BigInt.fromNormalizedNonZero(meta.signFlag, z1, i + 1)
+        }
+        if bitCount == 0 { return self }
+        throwNegBitCount()
+    }
+
+    func shl(_ bitCount: Int) -> BigInt {
+        if isZero() || bitCount == 0 { return self }
+        if bitCount > 0 {
+            let thisBitLen = magia_normBitLen(magia, Int(meta.normLen))
+            let z = magia_newWithBitLen(thisBitLen + bitCount)
+            let zNormLen = magia_setShiftLeft(z, magia, Int(meta.normLen), bitCount)
+            verify(zNormLen == z.size)
+            return BigInt.fromNormalizedNonZero(meta.signFlag, z)
+        }
+        throwNegBitCount()
+    }
+
+    func withSetBit(_ bitIndex: Int) -> BigInt { withBitOp(bitIndex, true) }
+    func withClearBit(_ bitIndex: Int) -> BigInt { withBitOp(bitIndex, false) }
+
+    private func withBitOp(_ bitIndex: Int, _ isSetOp: Bool) -> BigInt {
+        if bitIndex >= 0 {
+            if testBit(bitIndex) == isSetOp { return self }
+            if isMagnitudePowerOfTwo() && magnitudeBitLen() - 1 == bitIndex {
+                verify(!isSetOp)
+                return BigInt.ZERO
+            }
+            let newBitLen = max(bitIndex + 1, magia_normBitLen(magia, Int(meta.normLen)))
+            let m = magia_newCopyWithExactBitLen(magia, Int(meta.normLen), newBitLen)
+            let wordIndex = bitIndex >> 5
+            let isolatedBit: Limb = 1 << (bitIndex & 0x1F)
+            let limb = m[wordIndex]
+            m[wordIndex] = isSetOp ? (limb | isolatedBit) : (limb & ~isolatedBit)
+            return BigInt.fromNonNormalizedManyNonZero(meta.signFlag, m)
+        }
+        throwBoundsCheckViolation()
+    }
+
+    func withBitMask(_ bitWidth: Int, _ bitIndex: Int = 0) -> BigInt {
+        let myBitLen = magnitudeBitLen()
+        if bitIndex < 0 || bitWidth < 0 { throwInvalidBitLenRange() }
+        if bitWidth == 0 || bitIndex >= myBitLen { return BigInt.ZERO }
+        if bitWidth == 1 && !testBit(bitIndex) { return BigInt.ZERO }
+        if bitWidth == 1 { return BigInt.withSetBit(bitIndex) }
+        let clampedBitLen = min(bitWidth + bitIndex, myBitLen)
+        let ret = magia_newCopyWithExactBitLen(magia, Int(meta.normLen), clampedBitLen)
+        let nlz = (ret.size << 5) - clampedBitLen
+        ret[ret.size - 1] = ret[ret.size - 1] & (Limb.max >> nlz)
+        let loIndex = bitIndex >> 5
+        ret.fill(0, 0, loIndex)
+        let ctz = bitIndex & 0x1F
+        ret[loIndex] = ret[loIndex] & (Limb.max << ctz)
+        return BigInt.fromNonNormalizedOrZero(ret)
+    }
+
+    // MARK: binary (two's-complement) constructors
+
+    static func fromTwosComplementBigEndianBytes(_ bytes: [UInt8], _ offset: Int = 0, _ length: Int? = nil) -> BigInt {
+        fromBinaryBytes(true, true, bytes, offset, length)
+    }
+
+    static func fromBinaryBytes(_ isTwosComplement: Bool, _ isBigEndian: Bool,
+                                _ bytes: [UInt8], _ offset: Int = 0, _ length: Int? = nil) -> BigInt {
+        let len = length ?? (bytes.count - offset)
+        if offset < 0 || len < 0 || len > bytes.count - offset { throwBoundsCheckViolation() }
+        if len > 0 {
+            let ibSign = offset - 1 + (isBigEndian ? 1 : len)
+            let isNegative = isTwosComplement && (bytes[ibSign] & 0x80) != 0
+            let magia = BigIntSerde.fromBinaryBytes(isNegative, isBigEndian, bytes, offset, len)
+            if magia !== MAGIA_ZERO {
+                biStat(.BI_CONSTRUCT_BINARY_ARRAY)
+                return fromNormalizedNonZero(isNegative, magia)
+            }
+        }
+        return ZERO
+    }
+
+    static func fromLittleEndianIntArray(_ sign: Bool, _ a: [Limb], _ len: Int? = nil) -> BigInt {
+        let l = len ?? a.count
+        if l >= 0 && l <= a.count {
+            let tmp = Magia(limbs: ContiguousArray(a[0..<l]))
+            let nl = magia_normLen(tmp, l)
+            if nl > 0 {
+                biStat(.BI_CONSTRUCT_BINARY_ARRAY)
+                return fromNormalizedNonZero(sign, tmp.copyOf(nl))
+            }
+            return ZERO
+        }
+        throwBoundsCheckViolation()
+    }
+
     // MARK: add / sub impls (engine: mutAdd*/mutSub*/setSub)
 
     func addImpl(_ isSub: Bool, _ other: BigIntNumber) -> BigInt {
@@ -540,12 +700,16 @@ struct BigInt: BigIntNumber, Comparable {
     static func % (lhs: BigInt, dw: UInt64) -> BigInt { lhs.remModImpl64(dw, false) }
 }
 
+// Hashable: consistent with `==` (numeric value). Mirrors Kotlin's
+// `31 * isNegative.hashCode() + magnitudeHashCode()` (JVM Boolean.hashCode =
+// 1231/1237) so the hash is bit-identical across ports.
+extension BigInt: Hashable {
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(31 &* Int32(meta.isNegative ? 1231 : 1237) &+ magnitudeHashCode())
+    }
+}
+
 // ============================================================================
-// DEFERRED from BigInt.kt (next pushes):
-//   - pow / gcd / square           → Phase 3 BigIntAlgorithms
-//   - from(Double) / fromULongShiftLeft
-//   - from(String/CharSequence/CharArray/ByteArray)  (Phase 3 ParsePrint +
-//     Latin1Iterator); random; binary-array constructors
-//   - bit ops (and/or/xor/shl/shr/setBit), public square
-//   - Equatable/Hashable per Kotlin's exact equals/hashCode (verify vs source)
+// DEFERRED from BigInt.kt: from(Double)/fromULongShiftLeft, random constructor,
+// from(CharSequence/CharArray/ByteArray) parse overloads (minor; String done).
 // ============================================================================

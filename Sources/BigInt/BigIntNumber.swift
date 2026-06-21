@@ -264,6 +264,21 @@ extension BigIntNumber {
     /// Integer square root: largest r with r*r ≤ self < (r+1)^2.
     func isqrt() -> BigInt { BigIntAlgorithms.isqrt(self) }
     func isPerfectSquare() -> Bool { BigIntAlgorithms.isPerfectSquare(self) }
+
+    // MARK: serde (Phase 3 BigIntSerde)
+
+    func toTwosComplementBigEndianByteArray() -> [UInt8] {
+        BigIntSerde.toTwosComplementBigEndianByteArray(self)
+    }
+    func toBinaryByteArray(_ isTwosComplement: Bool, _ isBigEndian: Bool) -> [UInt8] {
+        BigIntSerde.toBinaryByteArray(self, isTwosComplement: isTwosComplement, isBigEndian: isBigEndian)
+    }
+    func magnitudeToLittleEndianIntArray() -> [Limb] {
+        BigIntSerde.magnitudeToLittleEndianIntArray(self)
+    }
+    func magnitudeToLittleEndianLongArray() -> [UInt64] {
+        BigIntSerde.magnitudeToLittleEndianLongArray(self)
+    }
 }
 
 // Static debug helper (Kotlin companion `validateNormLenAndInjectPoison`).
