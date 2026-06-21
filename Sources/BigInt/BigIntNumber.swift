@@ -265,6 +265,11 @@ extension BigIntNumber {
     func isqrt() -> BigInt { BigIntAlgorithms.isqrt(self) }
     func isPerfectSquare() -> Bool { BigIntAlgorithms.isPerfectSquare(self) }
 
+    // MARK: primality (Phase 4 BigIntPrime)
+
+    func isProbablePrime() -> Bool { BigIntPrime.isProbablePrime(self) }
+    func nextProbablePrime() -> BigInt { BigIntPrime.nextProbablePrime(self) }
+
     // MARK: serde (Phase 3 BigIntSerde)
 
     func toTwosComplementBigEndianByteArray() -> [UInt8] {

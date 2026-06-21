@@ -182,7 +182,17 @@ enum BigIntAlgorithms {
             }
             carry = carry &+ UInt64(t[i + k])
             t[i + k] = carry.toLimb()
-            t[i + k + 1] = t[i + k + 1] &+ (carry >> 32).toLimb()
+            // propagate the remaining carry through the high limbs (a single-limb
+            // push loses a carry when t[i+k+1] is already 0xFFFFFFFF — observable
+            // for sparse moduli just above a power of two)
+            var c = carry >> 32
+            var idx = i + k + 1
+            while c != 0 {
+                let acc = UInt64(t[idx]) &+ c
+                t[idx] = acc.toLimb()
+                c = acc >> 32
+                idx += 1
+            }
         }
 
         // Phase 2: shift down the upper half (forward self-copy, dest < src)
