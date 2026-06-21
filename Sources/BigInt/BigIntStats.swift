@@ -117,3 +117,10 @@ enum BigIntStats {
 func biStat(_ op: StatsOp) {
     BigIntStats.BI_OP_COUNTS[op.ordinal] += 1
 }
+
+/// Decrement helper (Kotlin `--BI_OP_COUNTS[op.ordinal]`, used to avoid
+/// double-counting when one factory delegates to another).
+@inline(__always)
+func biStatDec(_ op: StatsOp) {
+    BigIntStats.BI_OP_COUNTS[op.ordinal] -= 1
+}

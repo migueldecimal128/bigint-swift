@@ -154,6 +154,75 @@ struct BigInt: BigIntNumber, Comparable {
                       biMagnitude.magia.copyOf(Int(biMagnitude.meta.normLen)))
     }
 
+    /// Constructs a BigInt from the integral part of a finite `Double` (truncates
+    /// toward zero; +0/-0, sub-1 magnitudes, NaN and ±Inf all yield ZERO).
+    static func from(_ dbl: Double) -> BigInt {
+        // 1 + 11 + 52 == 64
+        let longBits = Int64(bitPattern: dbl.bitPattern)
+        let sign = longBits < 0
+        let signMask = longBits >> 63
+        let biasedExp = Int((UInt64(bitPattern: longBits) >> 52) & 0x7FF)
+        let exp = biasedExp - 1023
+        if exp < 0 ||                 // +0, -0, fractional amounts
+           biasedExp == 0x7FF {       // fractional values + NaN + Infinity
+            return ZERO
+        }
+        // finite, non-zero
+        biStat(.BI_CONSTRUCT_DBL)
+        let significand53 = (longBits & ((Int64(1) << 52) - 1)) | (Int64(1) << 52)
+        let shift = exp - 52
+        if shift <= 0 {
+            let magnitude = Int64(bitPattern: UInt64(bitPattern: significand53) >> -shift)
+            let l = (magnitude ^ signMask) - signMask
+            biStatDec(.BI_CONSTRUCT_64)   // don't double-count
+            return from(l)
+        }
+        biStatDec(.BI_CONSTRUCT_BITWISE)  // don't double-count
+        return fromULongShiftLeft(UInt64(bitPattern: significand53), shift, sign)
+    }
+
+    /// `(dw << shiftLeftCount)` with the given sign, as a BigInt.
+    static func fromULongShiftLeft(_ dw: UInt64, _ shiftLeftCount: Int, _ sign: Bool = false) -> BigInt {
+        if shiftLeftCount >= 0 {
+            let dwBitLen = 64 - dw.leadingZeroBitCount
+            switch true {
+            case shiftLeftCount == 0: return from(sign, dw)
+            case dwBitLen == 0: return ZERO
+            case dwBitLen == 1: return withSetBit(shiftLeftCount)
+            default:
+                let totalBitLen = dwBitLen + shiftLeftCount
+                let magia = magia_newWithBitLen(totalBitLen)
+                let innerShift = shiftLeftCount & 0x1F
+                let lo = (dw << innerShift).toLimb()
+                if innerShift == 0 {
+                    let hi0 = (dw >> 32).toLimb()
+                    if hi0 == 0 {
+                        magia[magia.size - 1] = lo
+                    } else {
+                        magia[magia.size - 1] = hi0
+                        magia[magia.size - 2] = lo
+                    }
+                } else {
+                    let mid = (dw >> (32 - innerShift)).toLimb()
+                    let hi = (dw >> (64 - innerShift)).toLimb()
+                    if hi != 0 {
+                        magia[magia.size - 1] = hi
+                        magia[magia.size - 2] = mid
+                        magia[magia.size - 3] = lo
+                    } else if mid != 0 {
+                        magia[magia.size - 1] = mid
+                        magia[magia.size - 2] = lo
+                    } else {
+                        magia[magia.size - 1] = lo
+                    }
+                }
+                biStat(.BI_CONSTRUCT_BITWISE)
+                return fromNormalizedNonZero(sign, magia)
+            }
+        }
+        throwBoundsCheckViolation()
+    }
+
     // MARK: text factories (Phase 3 BigIntParsePrint)
 
     static func from(_ str: String) -> BigInt { from(StringLatin1Iterator(str)) }
@@ -338,6 +407,25 @@ struct BigInt: BigIntNumber, Comparable {
             return BigInt.fromNonNormalizedManyNonZero(meta.signFlag, m)
         }
         throwBoundsCheckViolation()
+    }
+
+    /// A contiguous run of `bitWidth` set bits starting at bit `bitIndex` (i.e.
+    /// `((1 << bitWidth) - 1) << bitIndex`).
+    static func withBitMask(_ bitWidth: Int, _ bitIndex: Int = 0) -> BigInt {
+        if bitIndex < 0 || bitWidth < 0 { throwInvalidBitLenRange() }
+        if bitWidth == 0 { return ZERO }
+        if bitWidth == 1 { return withSetBit(bitIndex) }
+        // non-zero and more than 1 bit wide
+        let bitLen = bitWidth + bitIndex
+        let magia = magia_newWithBitLen(bitLen)
+        let loIndex = bitIndex >> 5
+        magia.fill(Limb.max, loIndex, magia.size)
+        let nlz = (magia.size << 5) - bitLen
+        magia[magia.size - 1] = Limb.max >> nlz
+        let ctz = bitIndex & 0x1F
+        magia[loIndex] = magia[loIndex] & (Limb.max << ctz)
+        biStat(.BI_CONSTRUCT_BITWISE)
+        return fromNormalizedNonZero(magia)
     }
 
     func withBitMask(_ bitWidth: Int, _ bitIndex: Int = 0) -> BigInt {
@@ -710,6 +798,7 @@ extension BigInt: Hashable {
 }
 
 // ============================================================================
-// DEFERRED from BigInt.kt: from(Double)/fromULongShiftLeft, random constructor,
-// from(CharSequence/CharArray/ByteArray) parse overloads (minor; String done).
+// DEFERRED from BigInt.kt: from(CharSequence/CharArray/ByteArray) parse
+// overloads (minor; String done). from(Double)/fromULongShiftLeft, the random
+// constructors, and static withBitMask are now ported (Phase 5 prerequisites).
 // ============================================================================

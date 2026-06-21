@@ -86,3 +86,50 @@ nonzero-mask idiom (a genuinely signed view of a single limb).
   unchecked exceptions; every site is a precondition/invariant violation). The
   Kotlin `_Int`/`_Magia`/`_BigInt` suffixed variants collapse onto the same
   `Never` (kept by name for 1:1 call sites).
+
+## Test porting (Phase 5: `commonTest/.../Test*.kt` → `Tests/BigIntTests/*.swift`)
+Use **swift-testing** (not XCTest). Each file:
+```swift
+import Testing
+@testable import BigInt
+
+@Suite struct TestFooName {           // keep the Kotlin class name
+    @Test func barCase() { ... }       // keep the Kotlin method name (camelCase)
+}
+```
+| Kotlin (`kotlin.test`) | Swift (`Testing`) |
+|---|---|
+| `@Test fun f()` | `@Test func f()` |
+| `class TestX { ... }` | `@Suite struct TestX { ... }` |
+| `assertEquals(exp, act)` | `#expect(act == exp)` (note arg order flips) |
+| `assertEquals(exp, act, "msg")` | `#expect(act == exp, "msg")` |
+| `assertTrue(c)` / `assertFalse(c)` | `#expect(c)` / `#expect(!c)` |
+| `assertNotEquals(a, b)` | `#expect(a != b)` |
+| `fail("m")` | `Issue.record("m")` |
+| `@BeforeTest` setup | a stored property / `init()` on the suite struct |
+| `repeat(n) { ... }` | `for _ in 0..<n { ... }` |
+| `for (i in a..<b)` | `for i in a..<b` |
+| `for (i in a..b)` (closed) | `for i in a...b` |
+| `for (i in n downTo 0)` | `var i = n; while i >= 0 { ...; i -= 1 }` |
+
+**RNG**: Kotlin `kotlin.random.Random` → `BigIntRandom` (Sources, conforms to
+`RandomNumberGenerator`, seedable). `Random(12345)` → `BigIntRandom(Int64(12345))`;
+`Random.Default` → `BigIntRandom.Default`; `Random.nextInt(8)` →
+`BigIntRandom.Default.nextInt(Int32(8))`. Surface preserved: `nextInt()`,
+`nextInt(until)`, `nextInt(from, until)`, `nextLong()`, `nextBoolean()`,
+`nextDouble(from, until)` (all take/return `Int32`/`Int64`/`Double`). Pass an
+explicit `BigIntRandom(seed)` so failures reproduce.
+
+**Factories/helpers** the tests lean on (all in Sources now): `BigInt.from(Int32/
+Int64/UInt64/Double/String)`, `BigInt.randomWithBitLen(_:_:withRandomSign:ensureOdd:)`,
+`randomWithMaxBitLen`, `randomBelow`, `BigInt.factorial/gcd/lcm`, `.toMutableBigInt()`,
+`MutableBigInt(_ :)`. Native `Int128`/`UInt128` are available as oracles (macOS 26).
+
+**Numeric literals**: annotate hex/large literals to avoid defaulting to `Int`
+overflow, e.g. `(0xFFFF_0000 as UInt64)`. Kotlin `bi(1)`-style local helpers →
+a `private func` on the suite or inline `BigInt.from(Int32(1))`.
+
+**Benchmarks** (`Test*Benchmark*.kt`, the timing halves of `TestBarrettVs*`,
+`Test*Comba*`): port the **correctness assertions only**; drop `measureNano`/
+`println`/timing loops. Keep representative iteration counts (large random sweeps
+are fine; they run in well under a second).
