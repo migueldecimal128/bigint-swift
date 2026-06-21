@@ -18,17 +18,6 @@ protocol BigIntNumber {
     func toBigInt() -> BigInt
 }
 
-// File-scope wrappers around engine free functions whose names collide with
-// protocol methods below (Swift members shadow same-named globals, so the
-// extension can't call them directly; at file scope there is no shadow).
-private func _isNormalized(_ x: Magia, _ n: Int) -> Bool { isNormalized(x, n) }
-private func _testBit(_ x: Magia, _ n: Int, _ b: Int) -> Bool { testBit(x, n, b) }
-private func _extractULongAtBitIndex(_ x: Magia, _ n: Int, _ b: Int) -> UInt64 {
-    extractULongAtBitIndex(x, n, b)
-}
-private func _bitLengthBigIntegerStyle(_ s: Bool, _ x: Magia, _ n: Int) -> Int {
-    bitLengthBigIntegerStyle(s, x, n)
-}
 
 extension BigIntNumber {
     func currentLimbCapacityHint() -> Int { 0 }
@@ -43,10 +32,10 @@ extension BigIntNumber {
     func signum() -> Int32 { meta.signum }
     func isEven() -> Bool { isZero() || (magia[0] & 1) == 0 }
     func isOdd() -> Bool { isNotZero() && (magia[0] & 1) != 0 }
-    func isMagnitudePowerOfTwo() -> Bool { isPowerOfTwo(magia, Int(meta.normLen)) }
+    func isMagnitudePowerOfTwo() -> Bool { magia_isPowerOfTwo(magia, Int(meta.normLen)) }
 
     func isNormalized() -> Bool {
-        _isNormalized(magia, Int(meta.normLen)) && meta._meta != Int32.min
+        magia_isNormalized(magia, Int(meta.normLen)) && meta._meta != Int32.min
     }
     func isSuperNormalized() -> Bool {
         isNormalized() && Int(meta.normLen) == magia.size
@@ -137,18 +126,18 @@ extension BigIntNumber {
     func modInt(_ n: Int32) -> Int32 {
         precondition(n > 0, "modulus must be > 0")
         precondition(!isNegative())
-        return Int32(bitPattern: calcRem32(magia, Int(meta.normLen), UInt32(bitPattern: n)))
+        return Int32(bitPattern: magia_calcRem32(magia, Int(meta.normLen), UInt32(bitPattern: n)))
     }
 
     func extractULongAtBitIndex(_ bitIndex: Int) -> UInt64 {
-        _extractULongAtBitIndex(magia, Int(meta.normLen), bitIndex)
+        magia_extractULongAtBitIndex(magia, Int(meta.normLen), bitIndex)
     }
 
     // MARK: bit-length / counts
 
-    func magnitudeBitLen() -> Int { normBitLen(magia, Int(meta.normLen)) }
+    func magnitudeBitLen() -> Int { magia_normBitLen(magia, Int(meta.normLen)) }
     func bitLengthBigIntegerStyle() -> Int {
-        _bitLengthBigIntegerStyle(meta.signFlag, magia, Int(meta.normLen))
+        magia_bitLengthBigIntegerStyle(meta.signFlag, magia, Int(meta.normLen))
     }
     func magnitudeIntArrayLen() -> Int { (magnitudeBitLen() + 31) >> 5 }
     func magnitudeLongArrayLen() -> Int { (magnitudeBitLen() + 63) >> 6 }
@@ -159,7 +148,7 @@ extension BigIntNumber {
         return (bitLen2sComplement + 7) >> 3
     }
 
-    func countTrailingZeroBits() -> Int { ctz(magia, Int(meta.normLen)) }
+    func countTrailingZeroBits() -> Int { magia_ctz(magia, Int(meta.normLen)) }
 
     func magnitudeCountOneBits() -> Int {
         let n = Int(meta.normLen)
@@ -171,13 +160,13 @@ extension BigIntNumber {
         fatalError()
     }
 
-    func testBit(_ bitIndex: Int) -> Bool { _testBit(magia, Int(meta.normLen), bitIndex) }
+    func testBit(_ bitIndex: Int) -> Bool { magia_testBit(magia, Int(meta.normLen), bitIndex) }
 
     // MARK: compare (value)
 
     func compareTo(_ other: BigIntNumber) -> Int {
         if meta.signMask != other.meta.signMask { return Int(meta.signMask | 1) }
-        let cmp = compare(magia, Int(meta.normLen), other.magia, Int(other.meta.normLen))
+        let cmp = magia_compare(magia, Int(meta.normLen), other.magia, Int(other.meta.normLen))
         return Int(meta.negateIfNegative(Int32(cmp)))
     }
     func compareTo(_ n: Int32) -> Int { compareToHelper(n < 0, UInt64(n.magnitude)) }
@@ -187,25 +176,25 @@ extension BigIntNumber {
 
     func compareToHelper(_ dwSign: Bool, _ dwMag: UInt64) -> Int {
         if meta.isNegative != dwSign { return Int(meta.signMask | 1) }
-        let cmp = compare(magia, Int(meta.normLen), dwMag)
+        let cmp = magia_compare(magia, Int(meta.normLen), dwMag)
         return dwSign ? -cmp : cmp
     }
 
     // MARK: compare (magnitude)
 
-    func magnitudeCompareTo(_ n: Int32) -> Int { compare(magia, Int(meta.normLen), UInt64(n.magnitude)) }
-    func magnitudeCompareTo(_ w: UInt32) -> Int { compare(magia, Int(meta.normLen), UInt64(w)) }
-    func magnitudeCompareTo(_ l: Int64) -> Int { compare(magia, Int(meta.normLen), l.magnitude) }
-    func magnitudeCompareTo(_ dw: UInt64) -> Int { compare(magia, Int(meta.normLen), dw) }
+    func magnitudeCompareTo(_ n: Int32) -> Int { magia_compare(magia, Int(meta.normLen), UInt64(n.magnitude)) }
+    func magnitudeCompareTo(_ w: UInt32) -> Int { magia_compare(magia, Int(meta.normLen), UInt64(w)) }
+    func magnitudeCompareTo(_ l: Int64) -> Int { magia_compare(magia, Int(meta.normLen), l.magnitude) }
+    func magnitudeCompareTo(_ dw: UInt64) -> Int { magia_compare(magia, Int(meta.normLen), dw) }
     func magnitudeCompareTo(_ a: Magia, _ length: Int) -> Int {
-        compare(magia, Int(meta.normLen), a, normLen(a, length))
+        magia_compare(magia, Int(meta.normLen), a, magia_normLen(a, length))
     }
     func magnitudeCompareTo(_ a: Magia) -> Int { magnitudeCompareTo(a, a.size) }
     func magnitudeCompareTo(_ other: BigIntNumber) -> Int {
-        compare(magia, Int(meta.normLen), other.magia, Int(other.meta.normLen))
+        magia_compare(magia, Int(meta.normLen), other.magia, Int(other.meta.normLen))
     }
     func magnitudeCompareTo(_ otherMeta: Meta, _ otherMagia: Magia) -> Int {
-        compare(magia, Int(meta.normLen), otherMagia, Int(otherMeta.normLen))
+        magia_compare(magia, Int(meta.normLen), otherMagia, Int(otherMeta.normLen))
     }
 
     // MARK: EQ / NE (value)

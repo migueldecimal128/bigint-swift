@@ -31,8 +31,8 @@ import Testing
         let (x, xn) = magiaU128(a)
         let (y, yn) = magiaU128(b)
         let z = Magia(8)
-        let fast = trySetDivFastPath(z, x, xn, y, yn)
-        let qn = fast >= 0 ? fast : setDivKnuth(z, x, xn, nil, y, yn, nil)
+        let fast = magia_trySetDivFastPath(z, x, xn, y, yn)
+        let qn = fast >= 0 ? fast : magia_setDivKnuth(z, x, xn, nil, y, yn, nil)
         return magiaToU128(z, qn)
     }
 
@@ -40,7 +40,7 @@ import Testing
         let (x, xn) = magiaU128(a)
         let (y, yn) = magiaU128(b)
         let z = Magia(8)
-        let rn = setRem(z, x, xn, y, yn)
+        let rn = magia_setRem(z, x, xn, y, yn)
         return magiaToU128(z, rn)
     }
 

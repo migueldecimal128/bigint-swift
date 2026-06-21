@@ -5,13 +5,13 @@
 // only borrow (kmutSub) uses the UInt64 wrapped-borrow `>> 63` pattern.
 //
 // Kotlin's file-private `dw32(n: Int)` is the same as Magia.swift's global
-// `dw32(_: Limb)`, so we reuse the global.
+// `magia_dw32(_: Limb)`, so we reuse the global.
 
 let KARATSUBA_SQR_THRESHOLD = 84
 let SCHOOLBOOK_SQR_THRESHOLD = 12
 
 /// Squares `x[0..<xNormLen)` into `z` (requires z.size ≥ 2*xNormLen).
-func setSqr(_ z: Magia, _ x: Magia, _ xNormLen: Int) -> Int {
+func magia_setSqr(_ z: Magia, _ x: Magia, _ xNormLen: Int) -> Int {
     switch xNormLen {
     case 0: return 0
     case 1: return setSqr1Limb(z, x)
@@ -20,18 +20,18 @@ func setSqr(_ z: Magia, _ x: Magia, _ xNormLen: Int) -> Int {
     case 4: return setSqr4Limbs(z, x)
     case ..<SCHOOLBOOK_SQR_THRESHOLD:
         // doubling overhead overwhelms simple multiply for a while
-        return setMulSchoolbook(z, x, xNormLen, x, xNormLen)
+        return magia_setMulSchoolbook(z, x, xNormLen, x, xNormLen)
     default:
-        return setSqrSchoolbook(z, 0, x, 0, xNormLen)
+        return magia_setSqrSchoolbook(z, 0, x, 0, xNormLen)
     }
 }
 
-func setSqrSchoolbook(_ z: Magia, _ x: Magia, _ xNormLen: Int) -> Int {
-    setSqrSchoolbook(z, 0, x, 0, xNormLen)
+func magia_setSqrSchoolbook(_ z: Magia, _ x: Magia, _ xNormLen: Int) -> Int {
+    magia_setSqrSchoolbook(z, 0, x, 0, xNormLen)
 }
 
 /// Squares `x[xOff..<xOff+xNormLen)` into `z[zOff..<zOff+2*xNormLen)`.
-func setSqrSchoolbook(_ z: Magia, _ zOff: Int, _ x: Magia, _ xOff: Int, _ xNormLen: Int) -> Int {
+func magia_setSqrSchoolbook(_ z: Magia, _ zOff: Int, _ x: Magia, _ xOff: Int, _ xNormLen: Int) -> Int {
     if xNormLen == 0 { return 0 }
     let zLen = 2 * xNormLen
     precondition(zOff >= 0 && zOff + zLen <= z.size)
@@ -40,11 +40,11 @@ func setSqrSchoolbook(_ z: Magia, _ zOff: Int, _ x: Magia, _ xOff: Int, _ xNormL
     precondition(xOff >= 0 && xOff + xNormLen <= x.size)
     // 1) Cross terms i < j
     for i in 0..<(xNormLen - 1) {
-        let ai = dw32(x[xOff + i])
+        let ai = magia_dw32(x[xOff + i])
         var carry: UInt64 = 0
         for j in (i + 1)..<xNormLen {
             let k = i + j
-            let t = ai &* dw32(x[xOff + j]) &+ dw32(z[zOff + k]) &+ carry
+            let t = ai &* magia_dw32(x[xOff + j]) &+ magia_dw32(z[zOff + k]) &+ carry
             z[zOff + k] = t.toLimb()
             carry = t >> 32
         }
@@ -54,7 +54,7 @@ func setSqrSchoolbook(_ z: Magia, _ zOff: Int, _ x: Magia, _ xOff: Int, _ xNormL
     // 2) Double the cross terms: z = z * 2 (linear scan)
     var shiftCarry: UInt64 = 0
     for i in 0..<zLen {
-        let zi = dw32(z[zOff + i])
+        let zi = magia_dw32(z[zOff + i])
         let t = (zi << 1) | shiftCarry
         z[zOff + i] = t.toLimb()
         shiftCarry = t >> 32
@@ -63,19 +63,19 @@ func setSqrSchoolbook(_ z: Magia, _ zOff: Int, _ x: Magia, _ xOff: Int, _ xNormL
     // 3) Diagonals: add a[i]^2 into column 2*i
     for i in 0..<xNormLen {
         var k = 2 * i
-        let zk = dw32(z[zOff + k])
-        let ai = dw32(x[xOff + i])
+        let zk = magia_dw32(z[zOff + k])
+        let ai = magia_dw32(x[xOff + i])
         let sqa = ai &* ai &+ zk
 
         z[zOff + k] = sqa.toLimb()
         k += 1
-        var carry = dw32(z[zOff + k]) &+ (sqa >> 32)
+        var carry = magia_dw32(z[zOff + k]) &+ (sqa >> 32)
         z[zOff + k] = carry.toLimb()
         carry = carry >> 32
         k += 1
 
         while carry != 0 && k < zLen {
-            carry = dw32(z[zOff + k]) &+ carry
+            carry = magia_dw32(z[zOff + k]) &+ carry
             z[zOff + k] = carry.toLimb()
             carry = carry >> 32
             k += 1
@@ -110,7 +110,7 @@ private func setSqr2Limbs(_ z: Magia, _ a: Magia) -> Int {
 }
 
 private func setSqr3Limbs(_ z: Magia, _ a: Magia) -> Int {
-    let a0 = dw32(a[0]), a1 = dw32(a[1]), a2 = dw32(a[2])
+    let a0 = magia_dw32(a[0]), a1 = magia_dw32(a[1]), a2 = magia_dw32(a[2])
 
     let s0 = a0 &* a0
     let s1 = a1 &* a1
@@ -171,8 +171,8 @@ private func setSqr3Limbs(_ z: Magia, _ a: Magia) -> Int {
 }
 
 private func setSqr4Limbs(_ z: Magia, _ a: Magia) -> Int {
-    let a0 = dw32(a[0]), a1 = dw32(a[1])
-    let a2 = dw32(a[2]), a3 = dw32(a[3])
+    let a0 = magia_dw32(a[0]), a1 = magia_dw32(a[1])
+    let a2 = magia_dw32(a[2]), a3 = magia_dw32(a[3])
 
     let s0 = a0 &* a0, s1 = a1 &* a1, s2 = a2 &* a2, s3 = a3 &* a3
     let c01 = a0 &* a1, c02 = a0 &* a2, c03 = a0 &* a3
@@ -237,22 +237,22 @@ private func setSqr4Limbs(_ z: Magia, _ a: Magia) -> Int {
 }
 
 /// Squares `x[0..<xNormLen)` with Karatsuba (requires z.size ≥ 2*xNormLen+1).
-func setSqrKaratsuba(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ tmp: Magia? = nil) -> Int {
+func magia_setSqrKaratsuba(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ tmp: Magia? = nil) -> Int {
     let k1 = (xNormLen + 1) / 2
     let tmpSize = 3 * k1 + 3
     verify(z.size >= 2 * xNormLen + 1)
     verify(tmp == nil || tmp!.size >= tmpSize)
     let t = tmp ?? Magia(tmpSize)
-    karatsubaSqr(z, 0, x, 0, xNormLen, t)
+    magia_karatsubaSqr(z, 0, x, 0, xNormLen, t)
     let zLastIndex = 2 * xNormLen - 1
     let zLastLimb = z[zLastIndex]
     let zNormLen = zLastIndex + Int((zLastLimb | (0 &- zLastLimb)) >> 31)
     return zNormLen
 }
 
-func karatsubaSqr(_ z: Magia, _ zOff: Int, _ a: Magia, _ aOff: Int, _ aLen: Int, _ t: Magia) {
+func magia_karatsubaSqr(_ z: Magia, _ zOff: Int, _ a: Magia, _ aOff: Int, _ aLen: Int, _ t: Magia) {
     if aLen < KARATSUBA_SQR_THRESHOLD {
-        _ = setSqrSchoolbook(z, zOff, a, aOff, aLen)
+        _ = magia_setSqrSchoolbook(z, zOff, a, aOff, aLen)
         return
     }
 
@@ -263,24 +263,24 @@ func karatsubaSqr(_ z: Magia, _ zOff: Int, _ a: Magia, _ aOff: Int, _ aLen: Int,
     precondition(t.size >= (3 * k1 + 3))
 
     // square lo half of a into z as z0
-    karatsubaSqr(z, zOff, a, aOff, k0, t)
+    magia_karatsubaSqr(z, zOff, a, aOff, k0, t)
     // square hi half of a into z as z1
-    karatsubaSqr(z, zOff + 2 * k0, a, aOff + k0, k1, t)
+    magia_karatsubaSqr(z, zOff + 2 * k0, a, aOff + k0, k1, t)
     // add a0 and a1 as s into t
-    ksetAdd(t, a, aOff, k0, k1)
+    magia_ksetAdd(t, a, aOff, k0, k1)
     // square s to s2 higher in t
-    _ = setSqrSchoolbook(t, k1 + 1, t, 0, k1 + 1)
+    _ = magia_setSqrSchoolbook(t, k1 + 1, t, 0, k1 + 1)
     // subtract z0 from s2
     let z1Off = k1 + 1
-    kmutSub(t, z1Off, z, zOff, 2 * k0)
+    magia_kmutSub(t, z1Off, z, zOff, 2 * k0)
     // subtract z2 from s2
-    kmutSub(t, z1Off, z, zOff + 2 * k0, 2 * k1)
+    magia_kmutSub(t, z1Off, z, zOff + 2 * k0, 2 * k1)
     // add shifted s2 as z1 into z
     let z1FullLen = 2 * (k1 + 1)
-    kmutAddShifted(z, zOff, t, z1Off, z1FullLen, k0)
+    magia_kmutAddShifted(z, zOff, t, z1Off, z1FullLen, k0)
 }
 
-func ksetAdd(_ t: Magia, _ a: Magia, _ aOff: Int, _ k0: Int, _ k1: Int) {
+func magia_ksetAdd(_ t: Magia, _ a: Magia, _ aOff: Int, _ k0: Int, _ k1: Int) {
     let a1Off = aOff + k0
     let a1End = aOff + k0 + k1
 
@@ -290,19 +290,19 @@ func ksetAdd(_ t: Magia, _ a: Magia, _ aOff: Int, _ k0: Int, _ k1: Int) {
 
     var carry: UInt64 = 0
     for i in 0..<k0 {
-        let tmp = dw32(a[aOff + i]) &+ dw32(a[a1Off + i]) &+ carry
+        let tmp = magia_dw32(a[aOff + i]) &+ magia_dw32(a[a1Off + i]) &+ carry
         t[i] = tmp.toLimb()
         carry = tmp >> 32
     }
     if k0 < k1 {
-        let tmp = dw32(a[a1Off + k0]) &+ carry
+        let tmp = magia_dw32(a[a1Off + k0]) &+ carry
         t[k0] = tmp.toLimb()
         carry = tmp >> 32
     }
     t[k1] = carry.toLimb()
 }
 
-func kmutSub(_ t: Magia, _ s2Off: Int, _ z: Magia, _ xOff: Int, _ xLen: Int) {
+func magia_kmutSub(_ t: Magia, _ s2Off: Int, _ z: Magia, _ xOff: Int, _ xLen: Int) {
     let start = s2Off
     let end = start + xLen
 
@@ -314,7 +314,7 @@ func kmutSub(_ t: Magia, _ s2Off: Int, _ z: Magia, _ xOff: Int, _ xLen: Int) {
     for i in 0..<xLen {
         let tIdx = start + i
         let zIdx = xOff + i
-        let tmp = dw32(t[tIdx]) &- dw32(z[zIdx]) &- borrow
+        let tmp = magia_dw32(t[tIdx]) &- magia_dw32(z[zIdx]) &- borrow
         t[tIdx] = tmp.toLimb()
         borrow = tmp >> 63
     }
@@ -325,14 +325,14 @@ func kmutSub(_ t: Magia, _ s2Off: Int, _ z: Magia, _ xOff: Int, _ xLen: Int) {
             // Borrow escaping t means (a0+a1)^2 < a0^2 + a1^2 — impossible.
             fatalError("Borrow escaped t.size in Karatsuba squaring")
         }
-        let tmp = dw32(t[k]) &- borrow
+        let tmp = magia_dw32(t[k]) &- borrow
         t[k] = tmp.toLimb()
         borrow = tmp >> 63
         k += 1
     }
 }
 
-func kmutAddShifted(_ z: Magia, _ zOff: Int, _ t: Magia, _ z1Off: Int, _ z1Len: Int, _ k0Shift: Int) {
+func magia_kmutAddShifted(_ z: Magia, _ zOff: Int, _ t: Magia, _ z1Off: Int, _ z1Len: Int, _ k0Shift: Int) {
     let start = zOff + k0Shift
     let end = start + z1Len
 
@@ -342,14 +342,14 @@ func kmutAddShifted(_ z: Magia, _ zOff: Int, _ t: Magia, _ z1Off: Int, _ z1Len: 
 
     var carry: UInt64 = 0
     for i in 0..<z1Len {
-        let tmp = dw32(z[start + i]) &+ dw32(t[z1Off + i]) &+ carry
+        let tmp = magia_dw32(z[start + i]) &+ magia_dw32(t[z1Off + i]) &+ carry
         z[start + i] = tmp.toLimb()
         carry = tmp >> 32
     }
 
     var k = end
     while carry != 0 && k < z.size {
-        let tmp = dw32(z[k]) &+ carry
+        let tmp = magia_dw32(z[k]) &+ carry
         z[k] = tmp.toLimb()
         carry = tmp >> 32
         k += 1

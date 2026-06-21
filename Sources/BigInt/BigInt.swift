@@ -72,7 +72,7 @@ struct BigInt: BigIntNumber, Comparable {
         fromNonNormalizedManyNonZero(false, magia)
     }
     static func fromNonNormalizedManyNonZero(_ sign: Bool, _ magia: Magia) -> BigInt {
-        let nl = normLen(magia)
+        let nl = magia_normLen(magia)
         verify(nl > 0)
         verify(_validateNormLenAndInjectPoison(magia, nl))
         return BigInt(Meta(signFlag: sign, normLen: Int32(nl)), magia)
@@ -89,7 +89,7 @@ struct BigInt: BigIntNumber, Comparable {
         fromNonNormalizedOrZero(false, magia)
     }
     static func fromNonNormalizedOrZero(_ sign: Bool, _ magia: Magia) -> BigInt {
-        let nl = normLen(magia)
+        let nl = magia_normLen(magia)
         if nl > 0 {
             verify(_validateNormLenAndInjectPoison(magia, nl))
             return BigInt(Meta(signFlag: sign, normLen: Int32(nl)), magia)
@@ -191,7 +191,7 @@ struct BigInt: BigIntNumber, Comparable {
         let otherNormLen = Int(other.meta.normLen)
         if otherNormLen <= 2 {
             switch otherNormLen {
-            case 2: return addImpl64(otherSign, toRawULongExact(other.magia))
+            case 2: return addImpl64(otherSign, magia_toRawULongExact(other.magia))
             case 1: return addImpl32(otherSign, other.magia[0])
             default: return self
             }
@@ -206,14 +206,14 @@ struct BigInt: BigIntNumber, Comparable {
             let thisBitLen = magnitudeBitLen()
             let otherBitLen = other.magnitudeBitLen()
             let zBitLen = max(thisBitLen, otherBitLen) + 1
-            let z = Magia(limbLenFromBitLen(zBitLen))
+            let z = Magia(magia_limbLenFromBitLen(zBitLen))
             let zNormLen: Int
             if thisNormLen >= otherNormLen {
                 magia.copyInto(z, 0, 0, thisNormLen)
-                zNormLen = mutAdd(z, thisNormLen, other.magia, otherNormLen)
+                zNormLen = magia_mutAdd(z, thisNormLen, other.magia, otherNormLen)
             } else {
                 other.magia.copyInto(z, 0, 0, otherNormLen)
-                zNormLen = mutAdd(z, otherNormLen, magia, thisNormLen)
+                zNormLen = magia_mutAdd(z, otherNormLen, magia, thisNormLen)
             }
             return BigInt.fromNormalizedNonZero(thisSign, z, zNormLen)
         } else {
@@ -225,7 +225,7 @@ struct BigInt: BigIntNumber, Comparable {
                 let largeMagia = cmp > 0 ? magia : other.magia
                 let smallMagia = cmp > 0 ? other.magia : magia
                 let z = Magia(largeNormLen)
-                let zNormLen = setSub(z, largeMagia, largeNormLen, smallMagia, smallNormLen)
+                let zNormLen = magia_setSub(z, largeMagia, largeNormLen, smallMagia, smallNormLen)
                 if zNormLen > 0 {
                     return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
                 }
@@ -241,15 +241,15 @@ struct BigInt: BigIntNumber, Comparable {
         if thisNormLen <= magia.size {
             if thisNormLen > 0 && thisSign == otherSign && w != 0 {
                 let wBitLen = 32 - Int(w.leadingZeroBitCount)
-                let thisBitLen = nonZeroNormBitLen(magia, thisNormLen)
+                let thisBitLen = magia_nonZeroNormBitLen(magia, thisNormLen)
                 let newBitLen = max(thisBitLen, wBitLen) + 1
-                let z = magia.copyOf(limbLenFromBitLen(newBitLen))
-                return BigInt.fromNormalizedNonZero(thisSign, z, mutAdd32(z, thisNormLen, w))
+                let z = magia.copyOf(magia_limbLenFromBitLen(newBitLen))
+                return BigInt.fromNormalizedNonZero(thisSign, z, magia_mutAdd32(z, thisNormLen, w))
             }
             if w == 0 { return self }
             if thisNormLen > 1 {
                 let z = magia.copyOf()
-                let zNormLen = mutSub32(z, thisNormLen, w)
+                let zNormLen = magia_mutSub32(z, thisNormLen, w)
                 if zNormLen > 0 { return BigInt.fromNormalizedNonZero(thisSign, z, zNormLen) }
                 return BigInt.ZERO
             }
@@ -271,16 +271,16 @@ struct BigInt: BigIntNumber, Comparable {
         if thisNormLen <= magia.size {
             if thisNormLen > 0 && thisSign == otherSign && dw != 0 {
                 let wBitLen = 64 - Int(dw.leadingZeroBitCount)
-                let thisBitLen = nonZeroNormBitLen(magia, thisNormLen)
+                let thisBitLen = magia_nonZeroNormBitLen(magia, thisNormLen)
                 let newBitLen = max(thisBitLen, wBitLen) + 1
-                let z = magia.copyOf(limbLenFromBitLen(newBitLen))
-                return BigInt.fromNormalizedNonZero(thisSign, z, mutAdd64(z, thisNormLen, dw))
+                let z = magia.copyOf(magia_limbLenFromBitLen(newBitLen))
+                return BigInt.fromNormalizedNonZero(thisSign, z, magia_mutAdd64(z, thisNormLen, dw))
             }
             if dw == 0 { return self }
             if thisNormLen == 0 { return BigInt.from(otherSign, dw) }
             if thisNormLen > 2 {
                 let z = magia.copyOf()
-                let zNormLen = mutSub64(z, thisNormLen, dw)
+                let zNormLen = magia_mutSub64(z, thisNormLen, dw)
                 if zNormLen > 0 { return BigInt.fromNormalizedNonZero(thisSign, z, zNormLen) }
                 return BigInt.ZERO
             }
@@ -299,10 +299,10 @@ struct BigInt: BigIntNumber, Comparable {
         if !isZero() && w != 0 {
             let sign = meta.signFlag != dwSign
             let thisNormLen = Int(meta.normLen)
-            let thisBitLen = normBitLen(magia, thisNormLen)
+            let thisBitLen = magia_normBitLen(magia, thisNormLen)
             let wBitLen = 32 - Int(w.leadingZeroBitCount)
-            let z = newWithBitLen(thisBitLen + wBitLen)
-            let zNormLen = setMul32(z, magia, thisNormLen, w)
+            let z = magia_newWithBitLen(thisBitLen + wBitLen)
+            let zNormLen = magia_setMul32(z, magia, thisNormLen, w)
             return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
         }
         return BigInt.ZERO
@@ -313,10 +313,10 @@ struct BigInt: BigIntNumber, Comparable {
         if !isZero() && dw != 0 {
             let sign = meta.signFlag != dwSign
             let thisNormLen = Int(meta.normLen)
-            let thisBitLen = normBitLen(magia, thisNormLen)
+            let thisBitLen = magia_normBitLen(magia, thisNormLen)
             let dwBitLen = 64 - Int(dw.leadingZeroBitCount)
-            let z = newWithBitLen(thisBitLen + dwBitLen)
-            let zNormLen = setMul64(z, magia, thisNormLen, dw)
+            let z = magia_newWithBitLen(thisBitLen + dwBitLen)
+            let zNormLen = magia_setMul64(z, magia, thisNormLen, dw)
             return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
         }
         return BigInt.ZERO
@@ -328,10 +328,10 @@ struct BigInt: BigIntNumber, Comparable {
             let sign = meta.signFlag != other.meta.signFlag
             let thisNormLen = Int(meta.normLen)
             let otherNormLen = Int(other.meta.normLen)
-            let thisBitLen = normBitLen(magia, thisNormLen)
-            let otherBitLen = normBitLen(other.magia, otherNormLen)
-            let z = newWithBitLen(thisBitLen + otherBitLen)
-            let zNormLen = setMul(z, magia, thisNormLen, other.magia, otherNormLen)
+            let thisBitLen = magia_normBitLen(magia, thisNormLen)
+            let otherBitLen = magia_normBitLen(other.magia, otherNormLen)
+            let z = magia_newWithBitLen(thisBitLen + otherBitLen)
+            let zNormLen = magia_setMul(z, magia, thisNormLen, other.magia, otherNormLen)
             return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
         }
         return BigInt.ZERO
@@ -345,7 +345,7 @@ struct BigInt: BigIntNumber, Comparable {
         if !isZero() {
             let thisNormLen = Int(meta.normLen)
             let z = Magia(thisNormLen)
-            let zNormLen = setDiv32(z, magia, thisNormLen, w)
+            let zNormLen = magia_setDiv32(z, magia, thisNormLen, w)
             if zNormLen > 0 { return BigInt.fromNormalizedNonZero(meta.signFlag != wSign, z, zNormLen) }
         }
         return BigInt.ZERO
@@ -358,11 +358,11 @@ struct BigInt: BigIntNumber, Comparable {
         if thisNormLen < 2 { return BigInt.ZERO }
         let sign = meta.signFlag != dwSign
         let z = Magia(thisNormLen - 1)
-        let tryFast64 = trySetDivFastPath64(z, magia, thisNormLen, dw)
+        let tryFast64 = magia_trySetDivFastPath64(z, magia, thisNormLen, dw)
         let zNormLen: Int
         if tryFast64 > 0 { zNormLen = tryFast64 }
         else if tryFast64 == 0 { return BigInt.ZERO }
-        else { zNormLen = setDivKnuth64(z, magia, thisNormLen, nil, dw) }
+        else { zNormLen = magia_setDivKnuth64(z, magia, thisNormLen, nil, dw) }
         return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
     }
 
@@ -380,12 +380,12 @@ struct BigInt: BigIntNumber, Comparable {
         let thisNormLen = Int(meta.normLen)
         if thisNormLen >= otherNormLen {
             if thisNormLen == otherNormLen {
-                let cmp = compare(magia, thisNormLen, other.magia, otherNormLen)
+                let cmp = magia_compare(magia, thisNormLen, other.magia, otherNormLen)
                 if cmp < 0 { return BigInt.ZERO }
                 if cmp == 0 { return BigInt.ONE }
             }
             let z = Magia(thisNormLen - otherNormLen + 1)
-            let zNormLen = setDivKnuth(z, magia, thisNormLen, nil, other.magia, otherNormLen, nil)
+            let zNormLen = magia_setDivKnuth(z, magia, thisNormLen, nil, other.magia, otherNormLen, nil)
             if zNormLen > 0 { return BigInt.fromNormalizedNonZero(meta.signFlag != otherSign, z, zNormLen) }
         }
         return BigInt.ZERO
@@ -396,7 +396,7 @@ struct BigInt: BigIntNumber, Comparable {
     func remModImpl64(_ dw: UInt64, _ isMod: Bool) -> BigInt {
         if dw == 0 { throwDivByZero() }
         if !isZero() {
-            let rem = calcRem64(magia, Int(meta.normLen), nil, dw)
+            let rem = magia_calcRem64(magia, Int(meta.normLen), nil, dw)
             if rem != 0 {
                 if meta.isNegative && isMod { return BigInt.from(dw &- rem) }
                 return BigInt.from(meta.isNegative, rem)
@@ -415,24 +415,24 @@ struct BigInt: BigIntNumber, Comparable {
         let applyModRingNormalization = isNegative() && isMod
         let z: Magia
         var zNormLen = 0
-        if normBitLen(x, xNormLen) <= normBitLen(y, yNormLen) {
-            let cmp = compare(x, xNormLen, y, yNormLen)
+        if magia_normBitLen(x, xNormLen) <= magia_normBitLen(y, yNormLen) {
+            let cmp = magia_compare(x, xNormLen, y, yNormLen)
             if cmp < 0 && !applyModRingNormalization { return self }
             if cmp < 0 {
                 z = Magia(yNormLen)
-                zNormLen = setSub(z, y, yNormLen, x, xNormLen)
+                zNormLen = magia_setSub(z, y, yNormLen, x, xNormLen)
                 return BigInt.fromNormalizedNonZero(z, zNormLen)
             }
             if cmp == 0 { return BigInt.ZERO }
             z = Magia(xNormLen)                            // cmp > 0
-            zNormLen = setSub(z, x, xNormLen, y, yNormLen)
+            zNormLen = magia_setSub(z, x, xNormLen, y, yNormLen)
         } else {
             z = Magia(yNormLen)
-            zNormLen = setRem(z, magia, xNormLen, other.magia, yNormLen)
+            zNormLen = magia_setRem(z, magia, xNormLen, other.magia, yNormLen)
             if zNormLen == 0 { return BigInt.ZERO }
         }
         if applyModRingNormalization {
-            zNormLen = setSub(z, y, yNormLen, z, zNormLen)
+            zNormLen = magia_setSub(z, y, yNormLen, z, zNormLen)
         }
         return BigInt.fromNormalizedNonZero(meta.signFlag && !isMod, z, zNormLen)
     }

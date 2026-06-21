@@ -15,7 +15,9 @@
 //
 // TRANSLITERATION CHEAT-SHEET (Kotlin → Swift), see PORTING_CONVENTIONS.md:
 //   x[i].toDws()  →  x[i].toDw()       (Limb → UInt64, zero-extended)
-//   dw32(n)       →  dw32(n)           (Limb → UInt64, zero-extended)
+//   dw32(n)       →  magia_dw32(n)      (Limb → UInt64, zero-extended)
+//   ENGINE FREE FUNCTIONS are `magia_`-prefixed (portability; avoids the
+//   member-shadows-global clash with BigInt/MutableBigInt methods).
 //   t.toInt()     →  t.toLimb()        (low 32 bits → Limb)        [store]
 //   t.toInt()     →  t.toInt32()       (low 32 bits → Int32)       [sign math]
 //   a + b / a * b →  a &+ b / a &* b   (WRAPPING; mirror Kotlin two's-complement)
@@ -85,7 +87,7 @@ final class Magia {
 
 // MARK: - scalar helpers / conversions
 
-@inline(__always) func bitLen(_ n: Int32) -> Int { 32 - Int(n.leadingZeroBitCount) }
+@inline(__always) func magia_bitLen(_ n: Int32) -> Int { 32 - Int(n.leadingZeroBitCount) }
 
 let MASK32: UInt64 = 0xFFFF_FFFF
 
@@ -98,7 +100,7 @@ nonisolated(unsafe) let MAGIA_ZERO = Magia(0)
 nonisolated(unsafe) let MAGIA_ONE = Magia(limbs: [1])
 
 /// Returns the 32-bit limb `n` zero-extended to a 64-bit `UInt64`.
-@inline(__always) func dw32(_ n: Limb) -> UInt64 { UInt64(n) }
+@inline(__always) func magia_dw32(_ n: Limb) -> UInt64 { UInt64(n) }
 
 extension Limb { // UInt32
     /// Kotlin `Int.toDw()` / `UInt.toDw()` — zero-extend a limb to a dword.
@@ -125,24 +127,24 @@ extension Int32 {
 let MAX_ALLOC_SIZE = (1 << 26) - 1
 
 /// First limb of `x` as a `Limb` (0 if empty).
-func toRawUInt(_ x: Magia) -> Limb { x.size == 0 ? 0 : x[0] }
+func magia_toRawUInt(_ x: Magia) -> Limb { x.size == 0 ? 0 : x[0] }
 
 /// Low 64 bits of the magnitude as `UInt64` (uses up to the first two limbs).
-func toRawULong(_ x: Magia, _ xNormLen: Int) -> UInt64 {
+func magia_toRawULong(_ x: Magia, _ xNormLen: Int) -> UInt64 {
     switch xNormLen {
     case 0: return 0
-    case 1: return dw32(x[0])
-    default: return (UInt64(x[1]) << 32) | dw32(x[0])
+    case 1: return magia_dw32(x[0])
+    default: return (UInt64(x[1]) << 32) | magia_dw32(x[0])
     }
 }
 
 /// First two limbs as `UInt64`, no bounds/normalization checks.
-@inline(__always) func toRawULongExact(_ x: Magia) -> UInt64 {
-    (UInt64(x[1]) << 32) | dw32(x[0])
+@inline(__always) func magia_toRawULongExact(_ x: Magia) -> UInt64 {
+    (UInt64(x[1]) << 32) | magia_dw32(x[0])
 }
 
 /// Stores `dw` into `z` as little-endian limbs; returns the limb length (0–2).
-func setULong(_ z: Magia, _ dw: UInt64) -> Int {
+func magia_setULong(_ z: Magia, _ dw: UInt64) -> Int {
     let lo = dw.toLimb()
     let hi = (dw >> 32).toLimb()
     if dw == 0 { return 0 }
@@ -156,7 +158,7 @@ func setULong(_ z: Magia, _ dw: UInt64) -> Int {
 
 /// Highest non-zero limb index + 1 over the whole array (0 if all zero).
 /// WARNING: only safe on `new`-allocated magia (picks up garbage upper limbs).
-func normLen(_ x: Magia) -> Int {
+func magia_normLen(_ x: Magia) -> Int {
     var i = x.size
     while true {
         i -= 1
@@ -167,7 +169,7 @@ func normLen(_ x: Magia) -> Int {
 }
 
 /// Highest non-zero limb index + 1 within the first `xLen` limbs.
-func normLen(_ x: Magia, _ xLen: Int) -> Int {
+func magia_normLen(_ x: Magia, _ xLen: Int) -> Int {
     if xLen < 0 || xLen > x.size { throwBoundsCheckViolation_Int() }
     var i = xLen
     while true {
@@ -179,7 +181,7 @@ func normLen(_ x: Magia, _ xLen: Int) -> Int {
 }
 
 /// Highest non-zero limb index + 1 within `xLen` limbs starting at `xOff`.
-func normLen(_ x: Magia, _ xOff: Int, _ xLen: Int) -> Int {
+func magia_normLen(_ x: Magia, _ xOff: Int, _ xLen: Int) -> Int {
     if xOff < 0 || xLen < 0 || xOff + xLen > x.size { throwBoundsCheckViolation_Int() }
     var i = xLen
     while true {
@@ -190,12 +192,12 @@ func normLen(_ x: Magia, _ xOff: Int, _ xLen: Int) -> Int {
     return 0
 }
 
-func isNormalized(_ x: Magia, _ xLen: Int) -> Bool {
+func magia_isNormalized(_ x: Magia, _ xLen: Int) -> Bool {
     verify(xLen >= 0 && xLen <= x.size)
     return xLen == 0 || x[xLen - 1] != 0
 }
 
-func isNormalized(_ x: Magia, _ xOff: Int, _ xLen: Int) -> Bool {
+func magia_isNormalized(_ x: Magia, _ xOff: Int, _ xLen: Int) -> Bool {
     verify(xOff >= 0 && xLen >= 0 && xOff + xLen <= x.size)
     return xLen == 0 || x[xOff + xLen - 1] != 0
 }
@@ -203,11 +205,11 @@ func isNormalized(_ x: Magia, _ xOff: Int, _ xLen: Int) -> Bool {
 // MARK: - allocation
 
 /// Limbs needed to hold `bitLen` bits (Kotlin `(bitLen + 0x1F) ushr 5`).
-@inline(__always) func limbLenFromBitLen(_ bitLen: Int) -> Int { (bitLen + 0x1F) >> 5 }
+@inline(__always) func magia_limbLenFromBitLen(_ bitLen: Int) -> Int { (bitLen + 0x1F) >> 5 }
 
-func newWithBitLen(_ bitLen: Int) -> Magia {
+func magia_newWithBitLen(_ bitLen: Int) -> Magia {
     if bitLen >= 1 && bitLen <= MAX_ALLOC_SIZE * 32 {
-        return Magia(limbLenFromBitLen(bitLen))
+        return Magia(magia_limbLenFromBitLen(bitLen))
     }
     if bitLen == 0 {
         return MAGIA_ZERO
@@ -215,12 +217,12 @@ func newWithBitLen(_ bitLen: Int) -> Magia {
     throwInvalidAllocationLength_Magia()
 }
 
-func newWithFloorLen(_ floorLen: Int) -> Magia {
-    Magia(calcHeapLimbQuantum(floorLen))
+func magia_newWithFloorLen(_ floorLen: Int) -> Magia {
+    Magia(magia_calcHeapLimbQuantum(floorLen))
 }
 
 /// Allocation size ≥ max(4, floorLen) rounded up to a multiple of 4.
-@inline(__always) func calcHeapLimbQuantum(_ floorLen: Int) -> Int {
+@inline(__always) func magia_calcHeapLimbQuantum(_ floorLen: Int) -> Int {
     if floorLen >= 0 && floorLen <= MAX_ALLOC_SIZE - 3 {
         // if floorLen == 0 then add 1  (Kotlin: floorLen + 1 - (-floorLen ushr 31))
         let t = floorLen + 1 - (floorLen > 0 ? 1 : 0)
@@ -230,11 +232,11 @@ func newWithFloorLen(_ floorLen: Int) -> Magia {
     throwInvalidAllocationLength_Int()
 }
 
-func newCopyWithExactBitLen(_ x: Magia, _ xLen: Int, _ exactBitLen: Int) -> Magia {
-    newCopyWithExactLimbLen(x, xLen, (exactBitLen + 0x1F) >> 5)
+func magia_newCopyWithExactBitLen(_ x: Magia, _ xLen: Int, _ exactBitLen: Int) -> Magia {
+    magia_newCopyWithExactLimbLen(x, xLen, (exactBitLen + 0x1F) >> 5)
 }
 
-func newCopyWithExactLimbLen(_ x: Magia, _ xLen: Int, _ exactLimbLen: Int) -> Magia {
+func magia_newCopyWithExactLimbLen(_ x: Magia, _ xLen: Int, _ exactLimbLen: Int) -> Magia {
     if exactLimbLen >= 1 && exactLimbLen <= MAX_ALLOC_SIZE {
         let dst = Magia(exactLimbLen)
         x.copyInto(dst, 0, 0, min(xLen, dst.size))
@@ -249,7 +251,7 @@ func newCopyWithExactLimbLen(_ x: Magia, _ xLen: Int, _ exactLimbLen: Int) -> Ma
 // MARK: - add
 
 /// `x += w` in place; returns new normalized length.
-func mutAdd32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
+func magia_mutAdd32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size {
         if w == 0 { return xNormLen }
         var carry = w.toDw()
@@ -265,7 +267,7 @@ func mutAdd32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
             verify(carry != 0)
             x[i] = carry.toLimb()
             i += 1
-            verify(isNormalized(x, i))
+            verify(magia_isNormalized(x, i))
             return i
         }
         throwAddOverflow()
@@ -274,7 +276,7 @@ func mutAdd32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
 }
 
 /// `x += dw` in place; returns new normalized length.
-func mutAdd64(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
+func magia_mutAdd64(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size {
         if dw == 0 { return xNormLen }
         var carry = dw
@@ -292,12 +294,12 @@ func mutAdd64(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
             i += 1
             carry = carry >> 32
             if carry == 0 {
-                verify(isNormalized(x, i))
+                verify(magia_isNormalized(x, i))
                 return i
             }
             if i < x.size {
                 x[i] = carry.toLimb()
-                verify(isNormalized(x, i + 1))
+                verify(magia_isNormalized(x, i + 1))
                 return i + 1
             }
         }
@@ -307,9 +309,9 @@ func mutAdd64(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
 }
 
 /// `x += y` in place; returns new normalized length.
-func mutAdd(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
-    verify(isNormalized(x, xNormLen))
-    verify(isNormalized(y, yNormLen))
+func magia_mutAdd(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+    verify(magia_isNormalized(x, xNormLen))
+    verify(magia_isNormalized(y, yNormLen))
     if xNormLen > 0 && xNormLen <= x.size && yNormLen > 0 && yNormLen <= y.size {
         let maxNormLen = max(xNormLen, yNormLen)
         if maxNormLen <= x.size {
@@ -339,7 +341,7 @@ func mutAdd(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
                 x[i] = 1
                 i += 1
             }
-            verify(isNormalized(x, i))
+            verify(magia_isNormalized(x, i))
             return i
         }
     }
@@ -349,7 +351,7 @@ func mutAdd(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
 // MARK: - sub
 
 /// `x -= w` in place (requires x ≥ w); returns new normalized length.
-func mutSub32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
+func magia_mutSub32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size {
         var borrow = w.toDw()
         var i = 0
@@ -363,7 +365,7 @@ func mutSub32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
         if borrow == 0 {
             // The last limb might have become zero
             let zNormLen = xNormLen - (x[xNormLen - 1] == 0 ? 1 : 0)
-            verify(isNormalized(x, zNormLen))
+            verify(magia_isNormalized(x, zNormLen))
             return zNormLen
         }
         throwSubUnderflow_Int()
@@ -372,7 +374,7 @@ func mutSub32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
 }
 
 /// `x -= dw` in place (requires x ≥ dw); returns new normalized length.
-func mutSub64(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
+func magia_mutSub64(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size {
         var borrow = dw
         var i = 0
@@ -392,7 +394,7 @@ func mutSub64(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
                     zNormLen -= 1
                 }
             }
-            verify(isNormalized(x, zNormLen))
+            verify(magia_isNormalized(x, zNormLen))
             return zNormLen
         }
         throwSubUnderflow_Int()
@@ -401,9 +403,9 @@ func mutSub64(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
 }
 
 /// `x -= y` in place (requires x ≥ y); returns new normalized length.
-func mutSub(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
-    verify(isNormalized(x, xNormLen))
-    verify(isNormalized(y, yNormLen))
+func magia_mutSub(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+    verify(magia_isNormalized(x, xNormLen))
+    verify(magia_isNormalized(y, yNormLen))
     if xNormLen > 0 && xNormLen <= x.size && yNormLen > 0 && yNormLen <= y.size {
         if xNormLen >= yNormLen {
             var borrow: UInt64 = 0
@@ -424,7 +426,7 @@ func mutSub(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
                         }
                     }
                 }
-                verify(isNormalized(x, zNormLen))
+                verify(magia_isNormalized(x, zNormLen))
                 return zNormLen
             }
             while i < xNormLen {
@@ -433,7 +435,7 @@ func mutSub(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
                 borrow = t >> 63
                 if borrow == 0 {
                     let zNormLen = xNormLen - (x[xNormLen - 1] == 0 ? 1 : 0)
-                    verify(isNormalized(x, zNormLen))
+                    verify(magia_isNormalized(x, zNormLen))
                     return zNormLen
                 }
                 i += 1
@@ -447,10 +449,10 @@ func mutSub(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
 }
 
 /// `z = x - y` (requires x ≥ y); z may alias x or y. Returns normalized length.
-func setSub(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+func magia_setSub(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size && yNormLen >= 0 && yNormLen <= y.size {
-        verify(isNormalized(x, xNormLen))
-        verify(isNormalized(y, yNormLen))
+        verify(magia_isNormalized(x, xNormLen))
+        verify(magia_isNormalized(y, yNormLen))
         if z.size >= xNormLen {
             if xNormLen >= yNormLen {
                 var borrow: UInt64 = 0
@@ -476,7 +478,7 @@ func setSub(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int
                 }
                 if borrow == 0 {
                     let zNormLen = lastNonZeroIndex + 1
-                    verify(isNormalized(z, zNormLen))
+                    verify(magia_isNormalized(z, zNormLen))
                     return zNormLen
                 }
             }
@@ -494,9 +496,9 @@ func setSub(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int
 // two's-complement, never trap); `>> 32` reads the high word (logical on UInt64).
 
 /// `z = x * w`; safe in place (z may === x). Returns normalized length.
-func setMul32(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
+func magia_setMul32(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size {
-        verify(isNormalized(x, xNormLen))
+        verify(magia_isNormalized(x, xNormLen))
         if xNormLen > 0 && w.nonzeroBitCount > 1 {
             let dws = w.toDw()
             var carry: UInt64 = 0
@@ -512,22 +514,22 @@ func setMul32(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
                 z[i] = carry.toLimb()
                 i += 1
             }
-            verify(isNormalized(z, i))
+            verify(magia_isNormalized(z, i))
             return i
         }
         if xNormLen == 0 || w == 0 { return 0 }
-        return setShiftLeft(z, x, xNormLen, Int(w.trailingZeroBitCount))
+        return magia_setShiftLeft(z, x, xNormLen, Int(w.trailingZeroBitCount))
     }
     throwBoundsCheckViolation()
 }
 
 /// `z = x * dw`; does not overwrite x. Returns normalized length.
-func setMul64(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
+func magia_setMul64(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
     if (dw >> 32) == 0 {
-        return setMul32(z, x, xNormLen, Limb(truncatingIfNeeded: dw))
+        return magia_setMul32(z, x, xNormLen, Limb(truncatingIfNeeded: dw))
     }
     if xNormLen >= 0 && xNormLen <= x.size {
-        verify(isNormalized(x, xNormLen))
+        verify(magia_isNormalized(x, xNormLen))
         if xNormLen > 0 && dw.nonzeroBitCount > 1 {
             let dws = dw
             let lo = dws & MASK32
@@ -556,23 +558,23 @@ func setMul64(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
                 }
             }
             if ppPrevHi == 0 {
-                verify(isNormalized(z, i))
+                verify(magia_isNormalized(z, i))
                 return i
             }
             throwMulOverflow()
         }
         if xNormLen == 0 { return 0 }
         verify(dw.nonzeroBitCount == 1)
-        return setShiftLeft(z, x, xNormLen, Int(dw.trailingZeroBitCount))
+        return magia_setShiftLeft(z, x, xNormLen, Int(dw.trailingZeroBitCount))
     }
     throwBoundsCheckViolation()
 }
 
-func setMul(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
-    setMulSchoolbook(z, x, xNormLen, y, yNormLen)
+func magia_setMul(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+    magia_setMulSchoolbook(z, x, xNormLen, y, yNormLen)
 }
 
-func setMulSchoolbook(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+func magia_setMulSchoolbook(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
     verify(z !== x && z !== y)
     if xNormLen >= 0 && xNormLen <= x.size &&
         yNormLen >= 0 && yNormLen <= y.size &&
@@ -606,7 +608,7 @@ func setMulSchoolbook(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNo
         // >= instead of == to help bounds check elimination
         if lastIndex >= z.size || z[lastIndex] == 0 { lastIndex -= 1 }
         let zNormLen = lastIndex + 1
-        verify(isNormalized(z, zNormLen))
+        verify(magia_isNormalized(z, zNormLen))
         return zNormLen
     }
     throwBoundsCheckViolation()
@@ -619,7 +621,7 @@ private let POW10: [UInt64] = [
 ]
 
 /// In-place fused multiply-add: `x = x * 10^pow10 + a`, pow10 in 0..9.
-func mutateFmaPow10(_ x: Magia, _ xLen: Int, _ pow10: Int, _ a: Limb) {
+func magia_mutateFmaPow10(_ x: Magia, _ xLen: Int, _ pow10: Int, _ a: Limb) {
     if pow10 >= 0 && pow10 <= 9 {
         let m64 = POW10[pow10]
         var carry = UInt64(a)
@@ -636,12 +638,12 @@ func mutateFmaPow10(_ x: Magia, _ xLen: Int, _ pow10: Int, _ a: Limb) {
 // MARK: - shifts
 
 /// `z = x >> bitCount`; safe in place (z may === x). Returns normalized length.
-func setShiftRight(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ bitCount: Int) -> Int {
+func magia_setShiftRight(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ bitCount: Int) -> Int {
     precondition(bitCount >= 0 && xNormLen >= 0 && xNormLen <= x.size)
-    verify(isNormalized(x, xNormLen))
+    verify(magia_isNormalized(x, xNormLen))
     if xNormLen == 0 { return 0 }
     precondition(x[xNormLen - 1] != 0)
-    let newBitLen = normBitLen(x, xNormLen) - bitCount
+    let newBitLen = magia_normBitLen(x, xNormLen) - bitCount
     if newBitLen <= 0 { return 0 }
     let zNormLen = (newBitLen + 0x1F) >> 5
     precondition(zNormLen <= z.size)
@@ -663,23 +665,23 @@ func setShiftRight(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ bitCount: Int) -> 
             z[i] = x[i + wordShift]
         }
     }
-    verify(isNormalized(z, zNormLen))
+    verify(magia_isNormalized(z, zNormLen))
     return zNormLen
 }
 
 /// `z = x << bitCount`; safe in place (z may === x). Returns normalized length.
-func setShiftLeft(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ bitCount: Int) -> Int {
-    verify(isNormalized(x, xNormLen))
+func magia_setShiftLeft(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ bitCount: Int) -> Int {
+    verify(magia_isNormalized(x, xNormLen))
 
     if xNormLen == 0 { return 0 }
 
-    let xBitLen = normBitLen(x, xNormLen)
+    let xBitLen = magia_normBitLen(x, xNormLen)
 
     let wordShift = bitCount >> 5
     let innerShift = bitCount & 31
 
     let zBitLen = xBitLen + bitCount
-    let zNormLen = limbLenFromBitLen(zBitLen)
+    let zNormLen = magia_limbLenFromBitLen(zBitLen)
 
     if zNormLen > z.size { throwShlOverflow() }
 
@@ -688,7 +690,7 @@ func setShiftLeft(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ bitCount: Int) -> I
         x.copyInto(z, wordShift, 0, xNormLen)
         z.fill(0, 0, wordShift)
 
-        precondition(isNormalized(z, zNormLen))
+        precondition(magia_isNormalized(z, zNormLen))
         return zNormLen
     }
 
@@ -713,14 +715,14 @@ func setShiftLeft(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ bitCount: Int) -> I
     // clear lower limbs
     z.fill(0, 0, wordShift)
 
-    verify(isNormalized(z, zNormLen))
+    verify(magia_isNormalized(z, zNormLen))
     return zNormLen
 }
 
 // MARK: - bit queries
 
-func isPowerOfTwo(_ x: Magia, _ xNormLen: Int) -> Bool {
-    verify(isNormalized(x, xNormLen))
+func magia_isPowerOfTwo(_ x: Magia, _ xNormLen: Int) -> Bool {
+    verify(magia_isNormalized(x, xNormLen))
     if xNormLen >= 0 && xNormLen <= x.size {
         var bitSeen = false
         for i in 0..<xNormLen {
@@ -735,9 +737,9 @@ func isPowerOfTwo(_ x: Magia, _ xNormLen: Int) -> Bool {
     throwBoundsCheckViolation()
 }
 
-func bitLen(_ x: Magia) -> Int { bitLen(x, x.size) }
+func magia_bitLen(_ x: Magia) -> Int { magia_bitLen(x, x.size) }
 
-func bitLen(_ x: Magia, _ xLen: Int) -> Int {
+func magia_bitLen(_ x: Magia, _ xLen: Int) -> Int {
     if xLen >= 0 && xLen <= x.size {
         var i = xLen - 1
         while i >= 0 {
@@ -751,7 +753,7 @@ func bitLen(_ x: Magia, _ xLen: Int) -> Int {
     throwBoundsCheckViolation()
 }
 
-func normBitLen(_ x: Magia, _ xLen: Int) -> Int {
+func magia_normBitLen(_ x: Magia, _ xLen: Int) -> Int {
     if xLen > 0 {
         let lastLimb = x[xLen - 1]
         verify(lastLimb != 0)
@@ -760,25 +762,25 @@ func normBitLen(_ x: Magia, _ xLen: Int) -> Int {
     return 0
 }
 
-@inline(__always) func nonZeroNormBitLen(_ x: Magia, _ xLen: Int) -> Int {
+@inline(__always) func magia_nonZeroNormBitLen(_ x: Magia, _ xLen: Int) -> Int {
     let lastLimb = x[xLen - 1]
     verify(lastLimb != 0)
     return (xLen << 5) - Int(lastLimb.leadingZeroBitCount)
 }
 
 /// Bit length using Java BigInteger semantics (two's-complement, minus sign bit).
-func bitLengthBigIntegerStyle(_ sign: Bool, _ x: Magia, _ xNormLen: Int) -> Int {
-    verify(isNormalized(x, xNormLen))
+func magia_bitLengthBigIntegerStyle(_ sign: Bool, _ x: Magia, _ xNormLen: Int) -> Int {
+    verify(magia_isNormalized(x, xNormLen))
     if xNormLen >= 0 && xNormLen <= x.size {
-        let bitLen = normBitLen(x, xNormLen)
-        let isNegPowerOfTwo = sign && isPowerOfTwo(x, xNormLen)
+        let bitLen = magia_normBitLen(x, xNormLen)
+        let isNegPowerOfTwo = sign && magia_isPowerOfTwo(x, xNormLen)
         return bitLen - (isNegPowerOfTwo ? 1 : 0)
     }
     throwBoundsCheckViolation()
 }
 
 /// Count of trailing zero bits in the magnitude; -1 if zero.
-func ctz(_ x: Magia, _ normLen: Int) -> Int {
+func magia_ctz(_ x: Magia, _ normLen: Int) -> Int {
     if normLen >= 0 && normLen <= x.size {
         for i in 0..<normLen {
             if x[i] != 0 {
@@ -793,10 +795,10 @@ func ctz(_ x: Magia, _ normLen: Int) -> Int {
 // MARK: - bitwise
 
 /// `z = x AND y`; supports aliasing. Returns normalized length.
-func setAnd(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+func magia_setAnd(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size && yNormLen >= 0 && yNormLen <= y.size {
-        verify(isNormalized(x, xNormLen))
-        verify(isNormalized(y, yNormLen))
+        verify(magia_isNormalized(x, xNormLen))
+        verify(magia_isNormalized(y, yNormLen))
         let minLen = min(xNormLen, yNormLen)
         if minLen <= z.size {
             var i = minLen
@@ -809,7 +811,7 @@ func setAnd(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int
                 z[i] = x[i] & y[i]
                 i -= 1
             }
-            verify(isNormalized(z, zNormLen))
+            verify(magia_isNormalized(z, zNormLen))
             return zNormLen
         }
     }
@@ -817,10 +819,10 @@ func setAnd(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int
 }
 
 /// `z = x OR y`; supports aliasing. Returns normalized length.
-func setOr(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+func magia_setOr(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size && yNormLen >= 0 && yNormLen <= y.size {
-        verify(isNormalized(x, xNormLen))
-        verify(isNormalized(y, yNormLen))
+        verify(magia_isNormalized(x, xNormLen))
+        verify(magia_isNormalized(y, yNormLen))
         let maxLen = max(xNormLen, yNormLen)
         if maxLen <= z.size {
             let minLen = min(xNormLen, yNormLen)
@@ -833,7 +835,7 @@ func setOr(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int)
             } else if minLen < yNormLen {
                 y.copyInto(z, minLen, minLen, yNormLen)
             }
-            verify(isNormalized(z, zNormLen))
+            verify(magia_isNormalized(z, zNormLen))
             return zNormLen
         }
     }
@@ -841,10 +843,10 @@ func setOr(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int)
 }
 
 /// `z = x XOR y`; supports aliasing. Returns normalized length.
-func setXor(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+func magia_setXor(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size && yNormLen >= 0 && yNormLen <= y.size {
-        verify(isNormalized(x, xNormLen))
-        verify(isNormalized(y, yNormLen))
+        verify(magia_isNormalized(x, xNormLen))
+        verify(magia_isNormalized(y, yNormLen))
         let maxLen = max(xNormLen, yNormLen)
         if maxLen <= z.size {
             let minLen = min(xNormLen, yNormLen)
@@ -859,9 +861,9 @@ func setXor(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int
                 y.copyInto(z, minLen, minLen, yNormLen)
                 zNormLen = yNormLen
             } else {
-                zNormLen = normLen(z, minLen)
+                zNormLen = magia_normLen(z, minLen)
             }
-            verify(isNormalized(z, zNormLen))
+            verify(magia_isNormalized(z, zNormLen))
             return zNormLen
         }
     }
@@ -870,7 +872,7 @@ func setXor(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int
 
 // MARK: - bit tests / extraction
 
-func testBit(_ x: Magia, _ xLen: Int, _ bitIndex: Int) -> Bool {
+func magia_testBit(_ x: Magia, _ xLen: Int, _ bitIndex: Int) -> Bool {
     if xLen >= 0 && xLen <= x.size {
         let wordIndex = bitIndex >> 5
         if wordIndex >= xLen { return false }
@@ -881,7 +883,7 @@ func testBit(_ x: Magia, _ xLen: Int, _ bitIndex: Int) -> Bool {
     throwBoundsCheckViolation()
 }
 
-func testAnyBitInLowerN(_ x: Magia, _ xLen: Int, _ bitCount: Int) -> Bool {
+func magia_testAnyBitInLowerN(_ x: Magia, _ xLen: Int, _ bitCount: Int) -> Bool {
     if xLen >= 0 && xLen <= x.size {
         let lastBitIndex = bitCount - 1
         let lastWordIndex = lastBitIndex >> 5
@@ -898,11 +900,11 @@ func testAnyBitInLowerN(_ x: Magia, _ xLen: Int, _ bitCount: Int) -> Bool {
 }
 
 /// `(x >> bitIndex) mod 2^64`. Reads up to three limbs.
-func extractULongAtBitIndex(_ x: Magia, _ xNormLen: Int, _ bitIndex: Int) -> UInt64 {
+func magia_extractULongAtBitIndex(_ x: Magia, _ xNormLen: Int, _ bitIndex: Int) -> UInt64 {
     if bitIndex >= 0 {
         let loLimb = bitIndex >> 5
         let innerShift = bitIndex & 0x1F
-        if bitIndex == 0 { return toRawULong(x, xNormLen) }
+        if bitIndex == 0 { return magia_toRawULong(x, xNormLen) }
         if loLimb >= xNormLen { return 0 }
         let lo = UInt64(x[loLimb])
         if (loLimb + 1) == xNormLen { return lo >> innerShift }
@@ -917,18 +919,18 @@ func extractULongAtBitIndex(_ x: Magia, _ xNormLen: Int, _ bitIndex: Int) -> UIn
 // MARK: - compare / equality
 
 /// `true` if the normalized magnitude `x` equals the single value `y` (bit pattern).
-func EQ(_ x: Magia, _ xNormLen: Int, _ y: Int32) -> Bool {
+func magia_EQ(_ x: Magia, _ xNormLen: Int, _ y: Int32) -> Bool {
     xNormLen == 1 && x[0] == Limb(bitPattern: y)
 }
 
-func EQ(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Bool {
-    compare(x, xNormLen, y, yNormLen) == 0
+func magia_EQ(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Bool {
+    magia_compare(x, xNormLen, y, yNormLen) == 0
 }
 
 /// Unsigned compare: -1 if x < y, 0 if equal, 1 if x > y.
-func compare(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
-    verify(isNormalized(x, xNormLen))
-    verify(isNormalized(y, yNormLen))
+func magia_compare(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+    verify(magia_isNormalized(x, xNormLen))
+    verify(magia_isNormalized(y, yNormLen))
     if xNormLen >= 0 && xNormLen <= x.size && yNormLen >= 0 && yNormLen <= y.size {
         if xNormLen != yNormLen {
             return ((xNormLen - yNormLen) >> 31) | 1
@@ -946,11 +948,11 @@ func compare(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
 }
 
 /// Compare the magnitude with an unsigned 64-bit value.
-func compare(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
-    verify(isNormalized(x, xNormLen))
+func magia_compare(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
+    verify(magia_isNormalized(x, xNormLen))
     if xNormLen >= 0 && xNormLen <= x.size {
         if xNormLen > 2 { return 1 }
-        let xv = toRawULong(x, xNormLen)
+        let xv = magia_toRawULong(x, xNormLen)
         return xv < dw ? -1 : (xv > dw ? 1 : 0)
     }
     throwBoundsCheckViolation()
@@ -966,13 +968,13 @@ func compare(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
 // here it collapses to one UInt64 path.
 
 /// `z = x / w`; supports in place. Returns normalized length.
-func setDiv32(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
+func magia_setDiv32(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size && z.size >= xNormLen {
-        verify(isNormalized(x, xNormLen))
+        verify(magia_isNormalized(x, xNormLen))
         if w == 0 { throwDivByZero_Int() }
         if xNormLen == 0 { return 0 }
         if w.nonzeroBitCount == 1 {
-            return setShiftRight(z, x, xNormLen, Int(w.trailingZeroBitCount))
+            return magia_setShiftRight(z, x, xNormLen, Int(w.trailingZeroBitCount))
         }
         let dw = UInt64(w)
         var carry: UInt64 = 0
@@ -984,44 +986,44 @@ func setDiv32(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
             i -= 1
         }
         let zNormLen = xNormLen - (z[xNormLen - 1] == 0 ? 1 : 0)
-        verify(isNormalized(z, zNormLen))
+        verify(magia_isNormalized(z, zNormLen))
         return zNormLen
     }
     throwBoundsCheckViolation()
 }
 
 /// `z = x / dw`; quotient via Knuth-64. Returns normalized length.
-func setDivKnuth64(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ unBuf: Magia?, _ dw: UInt64) -> Int {
+func magia_setDivKnuth64(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ unBuf: Magia?, _ dw: UInt64) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size && z.size >= xNormLen - 2 + 1 {
-        verify(isNormalized(x, xNormLen))
-        let qNormLen = Int(knuthDivide64(z, nil, x, dw, xNormLen, unBuf))
-        verify(isNormalized(z, qNormLen))
+        verify(magia_isNormalized(x, xNormLen))
+        let qNormLen = Int(magia_knuthDivide64(z, nil, x, dw, xNormLen, unBuf))
+        verify(magia_isNormalized(z, qNormLen))
         return qNormLen
     }
     throwBadKnuthArgument()
 }
 
 /// Fast paths for `x / y`. Writes quotient to z and returns its length, or -1.
-func trySetDivFastPath(_ zMagia: Magia, _ xMagia: Magia, _ xNormLen: Int, _ yMagia: Magia, _ yNormLen: Int) -> Int {
+func magia_trySetDivFastPath(_ zMagia: Magia, _ xMagia: Magia, _ xNormLen: Int, _ yMagia: Magia, _ yNormLen: Int) -> Int {
     if yNormLen == 0 { throwDivByZero_Int() }
     if xNormLen == 0 { return 0 }
     if xNormLen < yNormLen { return 0 }
     if xNormLen <= 2 {
-        return setULong(zMagia, toRawULong(xMagia, xNormLen) / toRawULong(yMagia, yNormLen))
+        return magia_setULong(zMagia, magia_toRawULong(xMagia, xNormLen) / magia_toRawULong(yMagia, yNormLen))
     }
     if yNormLen == 1 {
-        return setDiv32(zMagia, xMagia, xNormLen, yMagia[0])
+        return magia_setDiv32(zMagia, xMagia, xNormLen, yMagia[0])
     }
-    if isPowerOfTwo(yMagia, yNormLen) {
-        return setShiftRight(zMagia, xMagia, xNormLen, ctz(yMagia, yNormLen))
+    if magia_isPowerOfTwo(yMagia, yNormLen) {
+        return magia_setShiftRight(zMagia, xMagia, xNormLen, magia_ctz(yMagia, yNormLen))
     }
     // note that this also handles aliasing when x === y
     if xNormLen == yNormLen {
-        let xBitLen = normBitLen(xMagia, xNormLen)
-        let yBitLen = normBitLen(yMagia, yNormLen)
+        let xBitLen = magia_normBitLen(xMagia, xNormLen)
+        let yBitLen = magia_normBitLen(yMagia, yNormLen)
         if xBitLen < yBitLen { return 0 }
         if xBitLen == yBitLen {
-            let cmp = compare(xMagia, xNormLen, yMagia, yNormLen)
+            let cmp = magia_compare(xMagia, xNormLen, yMagia, yNormLen)
             if cmp < 0 { return 0 }
             zMagia[0] = 1
             return 1
@@ -1030,24 +1032,24 @@ func trySetDivFastPath(_ zMagia: Magia, _ xMagia: Magia, _ xNormLen: Int, _ yMag
     return -1
 }
 
-func trySetDivFastPath64(_ zMagia: Magia, _ xMagia: Magia, _ xNormLen: Int, _ yDw: UInt64) -> Int {
+func magia_trySetDivFastPath64(_ zMagia: Magia, _ xMagia: Magia, _ xNormLen: Int, _ yDw: UInt64) -> Int {
     if (yDw >> 32) == 0 {
-        return setDiv32(zMagia, xMagia, xNormLen, Limb(truncatingIfNeeded: yDw))
+        return magia_setDiv32(zMagia, xMagia, xNormLen, Limb(truncatingIfNeeded: yDw))
     }
     if xNormLen < 2 { return 0 }
     if xNormLen == 2 {
-        return setULong(zMagia, ((UInt64(xMagia[1]) << 32) | UInt64(xMagia[0])) / yDw)
+        return magia_setULong(zMagia, ((UInt64(xMagia[1]) << 32) | UInt64(xMagia[0])) / yDw)
     }
     if yDw.nonzeroBitCount == 1 {
-        return setShiftRight(zMagia, xMagia, xNormLen, Int(yDw.trailingZeroBitCount))
+        return magia_setShiftRight(zMagia, xMagia, xNormLen, Int(yDw.trailingZeroBitCount))
     }
     return -1
 }
 
 /// `x mod w` as a single limb.
-func calcRem32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Limb {
+func magia_calcRem32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Limb {
     if xNormLen >= 0 && xNormLen <= x.size {
-        verify(isNormalized(x, xNormLen))
+        verify(magia_isNormalized(x, xNormLen))
         if w == 0 { throwDivByZero() }
         if xNormLen <= 2 {
             switch xNormLen {
@@ -1077,11 +1079,11 @@ func calcRem32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Limb {
 }
 
 /// `x mod dw` as a 64-bit value.
-func calcRem64(_ x: Magia, _ xNormLen: Int, _ unBuf: Magia?, _ dw: UInt64) -> UInt64 {
+func magia_calcRem64(_ x: Magia, _ xNormLen: Int, _ unBuf: Magia?, _ dw: UInt64) -> UInt64 {
     if xNormLen >= 0 && xNormLen <= x.size {
-        verify(isNormalized(x, xNormLen))
+        verify(magia_isNormalized(x, xNormLen))
         if (dw >> 32) == 0 {
-            return UInt64(calcRem32(x, xNormLen, Limb(truncatingIfNeeded: dw)))
+            return UInt64(magia_calcRem32(x, xNormLen, Limb(truncatingIfNeeded: dw)))
         }
         if xNormLen <= 2 {
             switch xNormLen {
@@ -1097,16 +1099,16 @@ func calcRem64(_ x: Magia, _ xNormLen: Int, _ unBuf: Magia?, _ dw: UInt64) -> UI
         if dw.nonzeroBitCount == 1 {
             return ((UInt64(x[1]) << 32) | UInt64(x[0])) & ((UInt64(1) << dw.trailingZeroBitCount) - 1)
         }
-        return knuthDivide64(nil, nil, x, dw, xNormLen, unBuf)
+        return magia_knuthDivide64(nil, nil, x, dw, xNormLen, unBuf)
     }
     throwBoundsCheckViolation()
 }
 
 /// `z = x / y` via Knuth (z is the quotient). xTmp/yTmp optional scratch.
-func setDivKnuth(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ xTmp: Magia?,
+func magia_setDivKnuth(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ xTmp: Magia?,
                  _ y: Magia, _ yNormLen: Int, _ yTmp: Magia?) -> Int {
-    verify(isNormalized(x, xNormLen))
-    verify(isNormalized(y, yNormLen))
+    verify(magia_isNormalized(x, xNormLen))
+    verify(magia_isNormalized(y, yNormLen))
     verify(xTmp == nil || xTmp!.size >= xNormLen + 1)
     verify(yTmp == nil || yTmp!.size >= yNormLen)
     if xNormLen < yNormLen || yNormLen < 2 { throwBadKnuthArgument() }
@@ -1118,35 +1120,35 @@ func setDivKnuth(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ xTmp: Magia?,
     let q = z
     let r: Magia? = nil
     if yNormLen > 2 {
-        let qNormLen = knuthDivide(q, r, u, v, m, n, xTmp, yTmp)
-        verify(isNormalized(q, qNormLen))
+        let qNormLen = magia_knuthDivide(q, r, u, v, m, n, xTmp, yTmp)
+        verify(magia_isNormalized(q, qNormLen))
         return qNormLen
     }
     verify(yNormLen == 2)
     let vDw: UInt64 = (UInt64(v[1]) << 32) | v[0].toDw()
-    let qNormLen = Int(knuthDivide64(q, r, u, vDw, m, xTmp))
-    verify(isNormalized(q, qNormLen))
+    let qNormLen = Int(magia_knuthDivide64(q, r, u, vDw, m, xTmp))
+    verify(magia_isNormalized(q, qNormLen))
     return qNormLen
 }
 
-func setRem64(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
-    verify(isNormalized(x, xNormLen))
+func magia_setRem64(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
+    verify(magia_isNormalized(x, xNormLen))
     if (dw >> 32) == 0 {
-        let rem = calcRem32(x, xNormLen, Limb(truncatingIfNeeded: dw))
+        let rem = magia_calcRem32(x, xNormLen, Limb(truncatingIfNeeded: dw))
         let z0 = rem
         z[0] = z0
         return Int((z0 | (0 &- z0)) >> 31)
     }
     if xNormLen == 0 { return 0 }
-    if xNormLen <= 2 { return setULong(z, toRawULong(x, xNormLen) % dw) }
-    return setRem(z, x, xNormLen, Magia(limbs: [dw.toLimb(), (dw >> 32).toLimb()]), 2)
+    if xNormLen <= 2 { return magia_setULong(z, magia_toRawULong(x, xNormLen) % dw) }
+    return magia_setRem(z, x, xNormLen, Magia(limbs: [dw.toLimb(), (dw >> 32).toLimb()]), 2)
 }
 
 /// `z = x mod y`. Returns normalized length of the remainder.
-func setRem(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
-    verify(isNormalized(x, xNormLen))
-    verify(isNormalized(y, yNormLen))
-    let rLen0 = trySetRemFastPath(z, x, xNormLen, y, yNormLen)
+func magia_setRem(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+    verify(magia_isNormalized(x, xNormLen))
+    verify(magia_isNormalized(y, yNormLen))
+    let rLen0 = magia_trySetRemFastPath(z, x, xNormLen, y, yNormLen)
     if rLen0 >= 0 { return rLen0 }
     let n = yNormLen
     let m = xNormLen
@@ -1155,52 +1157,52 @@ func setRem(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int
     let q: Magia? = nil
     if z.size < yNormLen { throwBoundsCheckViolation() }
     let r = z
-    let rNormLen = knuthDivide(q, r, u, v, m, n)
+    let rNormLen = magia_knuthDivide(q, r, u, v, m, n)
     verify(rNormLen <= n)
-    verify(isNormalized(r, rNormLen))
+    verify(magia_isNormalized(r, rNormLen))
     return rNormLen
 }
 
-func trySetRemFastPath(_ zMagia: Magia, _ xMagia: Magia, _ xNormLen: Int, _ yMagia: Magia, _ yNormLen: Int) -> Int {
+func magia_trySetRemFastPath(_ zMagia: Magia, _ xMagia: Magia, _ xNormLen: Int, _ yMagia: Magia, _ yNormLen: Int) -> Int {
     if yNormLen == 0 { throwDivByZero() }
     if xNormLen < yNormLen {
         xMagia.copyInto(zMagia, 0, 0, xNormLen)
         return xNormLen
     }
     if yNormLen == 2 && xNormLen <= 2 {
-        return setULong(zMagia, toRawULong(xMagia, xNormLen) % toRawULong(yMagia, yNormLen))
+        return magia_setULong(zMagia, magia_toRawULong(xMagia, xNormLen) % magia_toRawULong(yMagia, yNormLen))
     }
     if yNormLen == 1 {
-        return setRem64(zMagia, xMagia, xNormLen, UInt64(yMagia[0]))
+        return magia_setRem64(zMagia, xMagia, xNormLen, UInt64(yMagia[0]))
     }
     // note that this also handles aliasing when x === y
     if xNormLen == yNormLen {
-        let xBitLen = normBitLen(xMagia, xNormLen)
-        let yBitLen = normBitLen(yMagia, yNormLen)
+        let xBitLen = magia_normBitLen(xMagia, xNormLen)
+        let yBitLen = magia_normBitLen(yMagia, yNormLen)
         if xBitLen < yBitLen {
             xMagia.copyInto(zMagia, 0, 0, xNormLen)
-            verify(isNormalized(zMagia, xNormLen))
+            verify(magia_isNormalized(zMagia, xNormLen))
             return xNormLen
         }
         if xBitLen == yBitLen {
-            let cmp = compare(xMagia, xNormLen, yMagia, yNormLen)
+            let cmp = magia_compare(xMagia, xNormLen, yMagia, yNormLen)
             if cmp < 0 {
                 xMagia.copyInto(zMagia, 0, 0, xNormLen)
-                verify(isNormalized(zMagia, xNormLen))
+                verify(magia_isNormalized(zMagia, xNormLen))
                 return xNormLen
             }
             if cmp == 0 { return 0 }
-            return setSub(zMagia, xMagia, xNormLen, yMagia, yNormLen)
+            return magia_setSub(zMagia, xMagia, xNormLen, yMagia, yNormLen)
         }
     }
     return -1
 }
 
 /// `z = x mod y` via Knuth (z is the remainder). xTmp/yTmp optional scratch.
-func setRem(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ xTmp: Magia?,
+func magia_setRem(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ xTmp: Magia?,
             _ y: Magia, _ yNormLen: Int, _ yTmp: Magia?) -> Int {
-    verify(isNormalized(x, xNormLen))
-    verify(isNormalized(y, yNormLen))
+    verify(magia_isNormalized(x, xNormLen))
+    verify(magia_isNormalized(y, yNormLen))
     verify(xTmp == nil || xTmp!.size >= xNormLen + 1)
     verify(yTmp == nil || yTmp!.size >= yNormLen)
     if xNormLen < yNormLen || yNormLen < 2 { fatalError() }
@@ -1211,14 +1213,14 @@ func setRem(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ xTmp: Magia?,
     if z.size < yNormLen { fatalError() }
     let r = z
     if yNormLen > 2 {
-        let rNormLen = knuthDivide(nil, r, u, v, m, n, xTmp, yTmp)
-        verify(isNormalized(z, rNormLen))
+        let rNormLen = magia_knuthDivide(nil, r, u, v, m, n, xTmp, yTmp)
+        verify(magia_isNormalized(z, rNormLen))
         return rNormLen
     }
     verify(yNormLen == 2)
     let vDw: UInt64 = (UInt64(v[1]) << 32) | v[0].toDw()
-    let rNormLen = Int(knuthDivide64(nil, r, u, vDw, m, xTmp))
-    verify(isNormalized(z, rNormLen))
+    let rNormLen = Int(magia_knuthDivide64(nil, r, u, vDw, m, xTmp))
+    verify(magia_isNormalized(z, rNormLen))
     return rNormLen
 }
 
@@ -1226,7 +1228,7 @@ func setRem(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ xTmp: Magia?,
 
 /// Multi-word division. q (length ≥ m-n+1) or nil; r (length ≥ n) or nil.
 /// Returns qNormLen if q != nil, rNormLen if r != nil, else -1.
-func knuthDivide(_ q: Magia?, _ r: Magia?, _ u: Magia, _ v: Magia, _ m: Int, _ n: Int,
+func magia_knuthDivide(_ q: Magia?, _ r: Magia?, _ u: Magia, _ v: Magia, _ m: Int, _ n: Int,
                  _ unBuf: Magia? = nil, _ vnBuf: Magia? = nil) -> Int {
     if m < n || n < 2 || v[n - 1] == 0 { fatalError() }
     verify(r !== q)
@@ -1254,28 +1256,28 @@ func knuthDivide(_ q: Magia?, _ r: Magia?, _ u: Magia, _ v: Magia, _ m: Int, _ n
 
     let shift = Int(vn[n - 1].leadingZeroBitCount)
     if shift > 0 {
-        _ = setShiftLeft(vn, vn, n, shift)
-        _ = setShiftLeft(un, un, m, shift)
+        _ = magia_setShiftLeft(vn, vn, n, shift)
+        _ = magia_setShiftLeft(un, un, m, shift)
     }
 
-    knuthDivideNormalizedCore(q, un, vn, m, n)
+    magia_knuthDivideNormalizedCore(q, un, vn, m, n)
 
     var rNormLen = 0
     if let r {
-        rNormLen = setShiftRight(r, un, normLen(un, m + 1), shift)
+        rNormLen = magia_setShiftRight(r, un, magia_normLen(un, m + 1), shift)
     }
 
-    if let q { return normLen(q, m - n + 1) }
+    if let q { return magia_normLen(q, m - n + 1) }
     if r != nil { return rNormLen }
     return -1
 }
 
 /// Core of Knuth division; `un` is side-effected and holds the remainder.
-func knuthDivideNormalizedCore(_ q: Magia?, _ un: Magia, _ vn: Magia, _ m: Int, _ n: Int) {
+func magia_knuthDivideNormalizedCore(_ q: Magia?, _ un: Magia, _ vn: Magia, _ m: Int, _ n: Int) {
     if m < n || n < 2 || vn[n - 1] < 0x8000_0000 { fatalError() }   // top limb must be normalized (hi bit set)
 
-    let vn_1 = dw32(vn[n - 1])
-    let vn_2 = dw32(vn[n - 2])
+    let vn_1 = magia_dw32(vn[n - 1])
+    let vn_2 = magia_dw32(vn[n - 2])
 
     var j = m - n
     while j >= 0 {
@@ -1283,13 +1285,13 @@ func knuthDivideNormalizedCore(_ q: Magia?, _ un: Magia, _ vn: Magia, _ m: Int, 
         let jn1 = jn - 1
         let jn2 = jn - 2
         // estimate q̂ = (un[j+n]*B + un[j+n-1]) / vn[n-1]
-        let hi = dw32(un[jn])
-        let lo = dw32(un[jn1])
+        let hi = magia_dw32(un[jn])
+        let lo = magia_dw32(un[jn1])
         let num = (hi << 32) | lo
         var qhat = num / vn_1
         var rhat = num &- (qhat &* vn_1)
 
-        let un_j = dw32(un[jn2])
+        let un_j = magia_dw32(un[jn2])
         while (qhat >> 32) != 0 || qhat &* vn_2 > (rhat << 32) &+ un_j {
             qhat &-= 1
             rhat = rhat &+ vn_1
@@ -1332,7 +1334,7 @@ func knuthDivideNormalizedCore(_ q: Magia?, _ un: Magia, _ vn: Magia, _ m: Int, 
 
 /// Divides a multi-limb integer by a 64-bit divisor (wrapper over Knuth).
 /// Returns qNormLen if q != nil, rNormLen if r != nil, else the 64-bit remainder.
-func knuthDivide64(_ q: Magia?, _ r: Magia?, _ u: Magia, _ vDw: UInt64, _ m: Int, _ unBuf: Magia?) -> UInt64 {
+func magia_knuthDivide64(_ q: Magia?, _ r: Magia?, _ u: Magia, _ vDw: UInt64, _ m: Int, _ unBuf: Magia?) -> UInt64 {
     if m < 2 || (vDw >> 32) == 0 { fatalError() }
 
     let un: Magia
@@ -1350,17 +1352,17 @@ func knuthDivide64(_ q: Magia?, _ r: Magia?, _ u: Magia, _ vDw: UInt64, _ m: Int
     let vnDw = vDw << shift
 
     if shift > 0 {
-        _ = setShiftLeft(un, un, m, shift)
+        _ = magia_setShiftLeft(un, un, m, shift)
     }
 
-    knuthDivideNormalizedCore64(q, un, vnDw, m)
+    magia_knuthDivideNormalizedCore64(q, un, vnDw, m)
 
     var rNormLen = 0
     if let r {
-        rNormLen = setShiftRight(r, un, normLen(un, m + 1), shift)
+        rNormLen = magia_setShiftRight(r, un, magia_normLen(un, m + 1), shift)
     }
 
-    if let q { return UInt64(normLen(q, m - 2 + 1)) }
+    if let q { return UInt64(magia_normLen(q, m - 2 + 1)) }
     if r != nil { return UInt64(rNormLen) }
     // caller wants the remainder as a UInt64
     let un0 = UInt64(un[0])
@@ -1373,7 +1375,7 @@ func knuthDivide64(_ q: Magia?, _ r: Magia?, _ u: Magia, _ vDw: UInt64, _ m: Int
     }
 }
 
-func knuthDivideNormalizedCore64(_ q: Magia?, _ un: Magia, _ vnDw: UInt64, _ m: Int) {
+func magia_knuthDivideNormalizedCore64(_ q: Magia?, _ un: Magia, _ vnDw: UInt64, _ m: Int) {
     if m < 2 || (vnDw >> 63) != 1 { fatalError() }
 
     let vn1 = vnDw >> 32
@@ -1383,13 +1385,13 @@ func knuthDivideNormalizedCore64(_ q: Magia?, _ un: Magia, _ vnDw: UInt64, _ m: 
     while j >= 0 {
         let j1 = j + 1
         let j2 = j + 2
-        let hi = dw32(un[j2])
-        let lo = dw32(un[j1])
+        let hi = magia_dw32(un[j2])
+        let lo = magia_dw32(un[j1])
         let num = (hi << 32) | lo
         var qhat = num / vn1
         var rhat = num &- (qhat &* vn1)
 
-        let un_j = dw32(un[j])
+        let un_j = magia_dw32(un[j])
         while (qhat >> 32) != 0 || qhat &* vn0 > (rhat << 32) &+ un_j {
             qhat &-= 1
             rhat = rhat &+ vn1

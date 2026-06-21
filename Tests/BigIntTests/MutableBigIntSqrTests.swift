@@ -1,7 +1,7 @@
 import Testing
 @testable import BigInt
 
-// setSqr cross-checked against the verified setMul(x, x) at every size (unrolled,
+// setSqr cross-checked against the verified magia_setMul(x, x) at every size (unrolled,
 // schoolbook, and Karatsuba >= 84 limbs), plus primitive squares vs Int128.
 
 @Suite struct MutableBigIntSqrTests {

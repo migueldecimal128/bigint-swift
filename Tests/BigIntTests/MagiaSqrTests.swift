@@ -1,7 +1,7 @@
 import Testing
 @testable import BigInt
 
-// Squaring is cross-checked against the already-verified setMul(x, x) for every
+// Squaring is cross-checked against the already-verified magia_setMul(x, x) for every
 // size (unrolled 1-4, schoolbook, and Karatsuba), plus small cases against a
 // native UInt128 oracle.
 
@@ -46,7 +46,7 @@ import Testing
                 let x = rng.magia(n)
                 let xv = magiaToU128(x, n)
                 let z = Magia(8)
-                let zn = setSqr(z, x, n)
+                let zn = magia_setSqr(z, x, n)
                 #expect(magiaToU128(z, zn) == xv &* xv)
             }
         }
@@ -59,8 +59,8 @@ import Testing
             let x = rng.magia(n)
             let z1 = Magia(2 * n + 4)
             let z2 = Magia(2 * n + 4)
-            let sn = setSqr(z1, x, n)
-            let mn = setMul(z2, x, n, x, n)
+            let sn = magia_setSqr(z1, x, n)
+            let mn = magia_setMul(z2, x, n, x, n)
             #expect(limbsEqual(z1, sn, z2, mn), "setSqr != setMul at n=\(n)")
         }
     }
@@ -72,8 +72,8 @@ import Testing
             let x = rng.magia(n)
             let zK = Magia(2 * n + 4)
             let zM = Magia(2 * n + 4)
-            let kn = setSqrKaratsuba(zK, x, n)
-            let mn = setMul(zM, x, n, x, n)
+            let kn = magia_setSqrKaratsuba(zK, x, n)
+            let mn = magia_setMul(zM, x, n, x, n)
             #expect(limbsEqual(zK, kn, zM, mn), "karatsuba != setMul at n=\(n)")
         }
     }
@@ -84,8 +84,8 @@ import Testing
             let x = rng.magia(n)
             let zS = Magia(2 * n + 4)
             let zM = Magia(2 * n + 4)
-            let sn = setSqrSchoolbook(zS, x, n)
-            let mn = setMul(zM, x, n, x, n)
+            let sn = magia_setSqrSchoolbook(zS, x, n)
+            let mn = magia_setMul(zM, x, n, x, n)
             #expect(limbsEqual(zS, sn, zM, mn), "setSqrSchoolbook != setMul at n=\(n)")
         }
     }
