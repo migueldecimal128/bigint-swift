@@ -34,9 +34,7 @@ struct BigInt: BigIntNumber, Comparable {
     nonisolated(unsafe) static let ONE = BigInt(Meta(1), MAGIA_ONE)
     nonisolated(unsafe) static let TWO = BigInt(Meta(1), Magia(limbs: [2]))
     nonisolated(unsafe) static let NEG_ONE = BigInt(Meta(signBit: 1, normLen: 1), MAGIA_ONE)
-    // NOTE: faithful to source (`Meta(4)`); this packs normLen=4 for a 1-limb
-    // [10] — an apparent inconsistency in bigint-kotlin, replicated verbatim.
-    nonisolated(unsafe) static let TEN = BigInt(Meta(4), Magia(limbs: [10]))
+    nonisolated(unsafe) static let TEN = BigInt(Meta(1), Magia(limbs: [10]))
 
     // MARK: internal normalized/non-normalized factories
 

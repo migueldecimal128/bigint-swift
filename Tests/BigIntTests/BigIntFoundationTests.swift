@@ -12,7 +12,11 @@ import Testing
         #expect(BigInt.TWO.toInt() == 2)
         #expect(BigInt.NEG_ONE.toInt() == -1)
         #expect(BigInt.NEG_ONE.isNegative())
-        #expect(BigInt.TEN.toInt() == 10)   // toInt reads only magia[0]; safe despite Meta(4)
+        #expect(BigInt.TEN.toInt() == 10)
+        // TEN is now a valid 1-limb constant: magnitude ops must not crash.
+        #expect(BigInt.TEN.magnitudeBitLen() == 4)        // 10 = 0b1010
+        #expect(BigInt.TEN.compareTo(Int32(10)) == 0)
+        #expect(BigInt.TEN == BigInt.from(Int32(10)))
     }
 
     @Test func fromIntRoundTrip() {
