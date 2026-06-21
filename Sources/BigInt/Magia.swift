@@ -60,6 +60,11 @@ final class Magia {
         }
     }
 
+    /// Kotlin `IntArray.copyOf(newSize)` restricted to the first `n` limbs.
+    func copyOf(_ n: Int) -> Magia {
+        Magia(limbs: ContiguousArray(a[0..<n]))
+    }
+
     /// Kotlin `IntArray.fill(value, fromIndex, toIndex)`.
     func fill(_ value: Limb, _ fromIndex: Int, _ toIndex: Int) {
         var i = fromIndex

@@ -15,7 +15,7 @@ protocol BigIntNumber {
     var meta: Meta { get }
     var magia: Magia { get }
     func currentLimbCapacityHint() -> Int
-    // `func toBigInt() -> BigInt` is added in Phase 2 once `struct BigInt` exists.
+    func toBigInt() -> BigInt
 }
 
 // File-scope wrappers around engine free functions whose names collide with
