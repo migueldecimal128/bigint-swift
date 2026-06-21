@@ -164,15 +164,338 @@ struct BigInt: BigIntNumber, Comparable {
 
     static func < (lhs: BigInt, rhs: BigInt) -> Bool { lhs.compareTo(rhs) < 0 }
     static func == (lhs: BigInt, rhs: BigInt) -> Bool { lhs.compareTo(rhs) == 0 }
+
+    // MARK: sign
+
+    func abs() -> BigInt { isNegative() ? BigInt(meta.abs(), magia) : self }
+    var absoluteValue: BigInt { abs() }
+
+    func negate() -> BigInt {
+        if !isZero() {
+            biStat(.BI_NEGATE)
+            return BigInt(meta.negate(), magia)
+        }
+        return BigInt.ZERO
+    }
+
+    func withSign(_ sign: Bool) -> BigInt { isNegative() == sign ? self : negate() }
+    func withSignOf(_ other: BigIntNumber) -> BigInt {
+        isNegative() == other.isNegative() ? self : negate()
+    }
+
+    // MARK: add / sub impls (engine: mutAdd*/mutSub*/setSub)
+
+    func addImpl(_ isSub: Bool, _ other: BigIntNumber) -> BigInt {
+        biStat(.BI_ADD_SUB_BI)
+        let thisSign = meta.signFlag
+        let thisNormLen = Int(meta.normLen)
+        let otherSign = isSub != other.meta.signFlag       // isSub xor sign
+        let otherNormLen = Int(other.meta.normLen)
+        if otherNormLen <= 2 {
+            switch otherNormLen {
+            case 2: return addImpl64(otherSign, toRawULongExact(other.magia))
+            case 1: return addImpl32(otherSign, other.magia[0])
+            default: return self
+            }
+        }
+        if thisNormLen == 0 {
+            if let o = other as? BigInt {
+                return isSub ? o.negate() : o
+            }
+            return BigInt.from(other.meta.signFlag != isSub, other)
+        }
+        if thisSign == otherSign {
+            let thisBitLen = magnitudeBitLen()
+            let otherBitLen = other.magnitudeBitLen()
+            let zBitLen = max(thisBitLen, otherBitLen) + 1
+            let z = Magia(limbLenFromBitLen(zBitLen))
+            let zNormLen: Int
+            if thisNormLen >= otherNormLen {
+                magia.copyInto(z, 0, 0, thisNormLen)
+                zNormLen = mutAdd(z, thisNormLen, other.magia, otherNormLen)
+            } else {
+                other.magia.copyInto(z, 0, 0, otherNormLen)
+                zNormLen = mutAdd(z, otherNormLen, magia, thisNormLen)
+            }
+            return BigInt.fromNormalizedNonZero(thisSign, z, zNormLen)
+        } else {
+            let cmp = magnitudeCompareTo(other)
+            if cmp != 0 {
+                let sign = (!thisSign) != (cmp > 0)        // !thisSign xor (cmp>0)
+                let largeNormLen = cmp > 0 ? thisNormLen : otherNormLen
+                let smallNormLen = cmp > 0 ? otherNormLen : thisNormLen
+                let largeMagia = cmp > 0 ? magia : other.magia
+                let smallMagia = cmp > 0 ? other.magia : magia
+                let z = Magia(largeNormLen)
+                let zNormLen = setSub(z, largeMagia, largeNormLen, smallMagia, smallNormLen)
+                if zNormLen > 0 {
+                    return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
+                }
+            }
+        }
+        return BigInt.ZERO
+    }
+
+    func addImpl32(_ otherSign: Bool, _ w: Limb) -> BigInt {
+        biStat(.BI_ADD_SUB_PRIMITIVE)
+        let thisSign = meta.signFlag
+        let thisNormLen = Int(meta.normLen)
+        if thisNormLen <= magia.size {
+            if thisNormLen > 0 && thisSign == otherSign && w != 0 {
+                let wBitLen = 32 - Int(w.leadingZeroBitCount)
+                let thisBitLen = nonZeroNormBitLen(magia, thisNormLen)
+                let newBitLen = max(thisBitLen, wBitLen) + 1
+                let z = magia.copyOf(limbLenFromBitLen(newBitLen))
+                return BigInt.fromNormalizedNonZero(thisSign, z, mutAdd32(z, thisNormLen, w))
+            }
+            if w == 0 { return self }
+            if thisNormLen > 1 {
+                let z = magia.copyOf()
+                let zNormLen = mutSub32(z, thisNormLen, w)
+                if zNormLen > 0 { return BigInt.fromNormalizedNonZero(thisSign, z, zNormLen) }
+                return BigInt.ZERO
+            }
+            if thisNormLen == 1 {
+                let loLimb = magia[0]
+                if loLimb > w { return BigInt.from(thisSign, loLimb &- w) }
+                if loLimb < w { return BigInt.from(!thisSign, w &- loLimb) }
+                return BigInt.ZERO
+            }
+            return BigInt.from(otherSign, w)               // thisNormLen == 0
+        }
+        throwBoundsCheckViolation()
+    }
+
+    func addImpl64(_ otherSign: Bool, _ dw: UInt64) -> BigInt {
+        biStat(.BI_ADD_SUB_PRIMITIVE)
+        let thisSign = meta.signFlag
+        let thisNormLen = Int(meta.normLen)
+        if thisNormLen <= magia.size {
+            if thisNormLen > 0 && thisSign == otherSign && dw != 0 {
+                let wBitLen = 64 - Int(dw.leadingZeroBitCount)
+                let thisBitLen = nonZeroNormBitLen(magia, thisNormLen)
+                let newBitLen = max(thisBitLen, wBitLen) + 1
+                let z = magia.copyOf(limbLenFromBitLen(newBitLen))
+                return BigInt.fromNormalizedNonZero(thisSign, z, mutAdd64(z, thisNormLen, dw))
+            }
+            if dw == 0 { return self }
+            if thisNormLen == 0 { return BigInt.from(otherSign, dw) }
+            if thisNormLen > 2 {
+                let z = magia.copyOf()
+                let zNormLen = mutSub64(z, thisNormLen, dw)
+                if zNormLen > 0 { return BigInt.fromNormalizedNonZero(thisSign, z, zNormLen) }
+                return BigInt.ZERO
+            }
+            let thisMag = toULongMagnitude()
+            if thisMag > dw { return BigInt.from(thisSign, thisMag &- dw) }
+            if thisMag < dw { return BigInt.from(!thisSign, dw &- thisMag) }
+            return BigInt.ZERO
+        }
+        throwBoundsCheckViolation()
+    }
+
+    // MARK: mul impls (engine: setMul32/64/setMul)
+
+    func mulImpl32(_ dwSign: Bool, _ w: Limb) -> BigInt {
+        biStat(.BI_MUL_PRIMITIVE)
+        if !isZero() && w != 0 {
+            let sign = meta.signFlag != dwSign
+            let thisNormLen = Int(meta.normLen)
+            let thisBitLen = normBitLen(magia, thisNormLen)
+            let wBitLen = 32 - Int(w.leadingZeroBitCount)
+            let z = newWithBitLen(thisBitLen + wBitLen)
+            let zNormLen = setMul32(z, magia, thisNormLen, w)
+            return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
+        }
+        return BigInt.ZERO
+    }
+
+    func mulImpl64(_ dwSign: Bool, _ dw: UInt64) -> BigInt {
+        biStat(.BI_MUL_PRIMITIVE)
+        if !isZero() && dw != 0 {
+            let sign = meta.signFlag != dwSign
+            let thisNormLen = Int(meta.normLen)
+            let thisBitLen = normBitLen(magia, thisNormLen)
+            let dwBitLen = 64 - Int(dw.leadingZeroBitCount)
+            let z = newWithBitLen(thisBitLen + dwBitLen)
+            let zNormLen = setMul64(z, magia, thisNormLen, dw)
+            return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
+        }
+        return BigInt.ZERO
+    }
+
+    func mulImpl(_ other: BigIntNumber) -> BigInt {
+        biStat(.BI_MUL_BI)
+        if !isZero() && !other.isZero() {
+            let sign = meta.signFlag != other.meta.signFlag
+            let thisNormLen = Int(meta.normLen)
+            let otherNormLen = Int(other.meta.normLen)
+            let thisBitLen = normBitLen(magia, thisNormLen)
+            let otherBitLen = normBitLen(other.magia, otherNormLen)
+            let z = newWithBitLen(thisBitLen + otherBitLen)
+            let zNormLen = setMul(z, magia, thisNormLen, other.magia, otherNormLen)
+            return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
+        }
+        return BigInt.ZERO
+    }
+
+    // MARK: div impls (engine: setDiv32/trySetDivFastPath64/setDivKnuth64/setDivKnuth)
+
+    func divImpl32(_ wSign: Bool, _ w: Limb) -> BigInt {
+        biStat(.BI_DIV_PRIMITIVE)
+        if w == 0 { throwDivByZero() }
+        if !isZero() {
+            let thisNormLen = Int(meta.normLen)
+            let z = Magia(thisNormLen)
+            let zNormLen = setDiv32(z, magia, thisNormLen, w)
+            if zNormLen > 0 { return BigInt.fromNormalizedNonZero(meta.signFlag != wSign, z, zNormLen) }
+        }
+        return BigInt.ZERO
+    }
+
+    func divImpl64(_ dwSign: Bool, _ dw: UInt64) -> BigInt {
+        if (dw >> 32) == 0 { return divImpl32(dwSign, Limb(truncatingIfNeeded: dw)) }
+        biStat(.BI_DIV_PRIMITIVE)
+        let thisNormLen = Int(meta.normLen)
+        if thisNormLen < 2 { return BigInt.ZERO }
+        let sign = meta.signFlag != dwSign
+        let z = Magia(thisNormLen - 1)
+        let tryFast64 = trySetDivFastPath64(z, magia, thisNormLen, dw)
+        let zNormLen: Int
+        if tryFast64 > 0 { zNormLen = tryFast64 }
+        else if tryFast64 == 0 { return BigInt.ZERO }
+        else { zNormLen = setDivKnuth64(z, magia, thisNormLen, nil, dw) }
+        return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
+    }
+
+    func divBig(_ other: BigInt) -> BigInt {
+        let otherSign = other.meta.signFlag
+        let otherNormLen = Int(other.meta.normLen)
+        if otherNormLen <= 2 {
+            if otherNormLen == 1 { return divImpl32(otherSign, other.magia[0]) }
+            if otherNormLen == 2 {
+                let divisor = (UInt64(other.magia[1]) << 32) | UInt64(other.magia[0])
+                return divImpl64(otherSign, divisor)
+            }
+            throwDivByZero_BigInt()
+        }
+        let thisNormLen = Int(meta.normLen)
+        if thisNormLen >= otherNormLen {
+            if thisNormLen == otherNormLen {
+                let cmp = compare(magia, thisNormLen, other.magia, otherNormLen)
+                if cmp < 0 { return BigInt.ZERO }
+                if cmp == 0 { return BigInt.ONE }
+            }
+            let z = Magia(thisNormLen - otherNormLen + 1)
+            let zNormLen = setDivKnuth(z, magia, thisNormLen, nil, other.magia, otherNormLen, nil)
+            if zNormLen > 0 { return BigInt.fromNormalizedNonZero(meta.signFlag != otherSign, z, zNormLen) }
+        }
+        return BigInt.ZERO
+    }
+
+    // MARK: rem / mod impls (engine: calcRem64/setSub/setRem)
+
+    func remModImpl64(_ dw: UInt64, _ isMod: Bool) -> BigInt {
+        if dw == 0 { throwDivByZero() }
+        if !isZero() {
+            let rem = calcRem64(magia, Int(meta.normLen), nil, dw)
+            if rem != 0 {
+                if meta.isNegative && isMod { return BigInt.from(dw &- rem) }
+                return BigInt.from(meta.isNegative, rem)
+            }
+        }
+        return BigInt.ZERO
+    }
+
+    func remModImpl(_ other: BigIntNumber, _ isMod: Bool) -> BigInt {
+        let xNormLen = Int(meta.normLen)
+        let yNormLen = Int(other.meta.normLen)
+        if yNormLen <= 2 { return remModImpl64(other.toULongMagnitude(), isMod) }
+        if xNormLen == 0 { return BigInt.ZERO }
+        let x = magia
+        let y = other.magia
+        let applyModRingNormalization = isNegative() && isMod
+        let z: Magia
+        var zNormLen = 0
+        if normBitLen(x, xNormLen) <= normBitLen(y, yNormLen) {
+            let cmp = compare(x, xNormLen, y, yNormLen)
+            if cmp < 0 && !applyModRingNormalization { return self }
+            if cmp < 0 {
+                z = Magia(yNormLen)
+                zNormLen = setSub(z, y, yNormLen, x, xNormLen)
+                return BigInt.fromNormalizedNonZero(z, zNormLen)
+            }
+            if cmp == 0 { return BigInt.ZERO }
+            z = Magia(xNormLen)                            // cmp > 0
+            zNormLen = setSub(z, x, xNormLen, y, yNormLen)
+        } else {
+            z = Magia(yNormLen)
+            zNormLen = setRem(z, magia, xNormLen, other.magia, yNormLen)
+            if zNormLen == 0 { return BigInt.ZERO }
+        }
+        if applyModRingNormalization {
+            zNormLen = setSub(z, y, yNormLen, z, zNormLen)
+        }
+        return BigInt.fromNormalizedNonZero(meta.signFlag && !isMod, z, zNormLen)
+    }
+
+    // MARK: mod (always non-negative result; rejects negative divisor)
+
+    func mod(_ n: Int32) -> BigInt {
+        if n < 0 { throwModNegDivisor() }
+        return remModImpl64(UInt64(UInt32(n.magnitude)), true)
+    }
+    func mod(_ w: UInt32) -> BigInt { remModImpl64(UInt64(w), true) }
+    func mod(_ l: Int64) -> BigInt {
+        if l < 0 { throwModNegDivisor() }
+        return remModImpl64(l.magnitude, true)
+    }
+    func mod(_ dw: UInt64) -> BigInt { remModImpl64(dw, true) }
+    func mod(_ other: BigIntNumber) -> BigInt { remModImpl(other, true) }
+
+    // MARK: operators
+
+    static prefix func - (x: BigInt) -> BigInt { x.negate() }
+    static prefix func + (x: BigInt) -> BigInt { x }
+
+    static func + (lhs: BigInt, rhs: BigInt) -> BigInt { lhs.addImpl(false, rhs) }
+    static func - (lhs: BigInt, rhs: BigInt) -> BigInt { lhs.addImpl(true, rhs) }
+    static func * (lhs: BigInt, rhs: BigInt) -> BigInt { lhs.mulImpl(rhs) }
+    static func / (lhs: BigInt, rhs: BigInt) -> BigInt { lhs.divBig(rhs) }
+    static func % (lhs: BigInt, rhs: BigInt) -> BigInt { lhs.remModImpl(rhs, false) }
+
+    static func + (lhs: BigInt, n: Int32) -> BigInt { lhs.addImpl32(n < 0, UInt32(n.magnitude)) }
+    static func + (lhs: BigInt, w: UInt32) -> BigInt { lhs.addImpl32(false, w) }
+    static func + (lhs: BigInt, l: Int64) -> BigInt { lhs.addImpl64(l < 0, l.magnitude) }
+    static func + (lhs: BigInt, dw: UInt64) -> BigInt { lhs.addImpl64(false, dw) }
+
+    static func - (lhs: BigInt, n: Int32) -> BigInt { lhs.addImpl32(n >= 0, UInt32(n.magnitude)) }
+    static func - (lhs: BigInt, w: UInt32) -> BigInt { lhs.addImpl32(true, w) }
+    static func - (lhs: BigInt, l: Int64) -> BigInt { lhs.addImpl64(l >= 0, l.magnitude) }
+    static func - (lhs: BigInt, dw: UInt64) -> BigInt { lhs.addImpl64(true, dw) }
+
+    static func * (lhs: BigInt, n: Int32) -> BigInt { lhs.mulImpl32(n < 0, UInt32(n.magnitude)) }
+    static func * (lhs: BigInt, w: UInt32) -> BigInt { lhs.mulImpl32(false, w) }
+    static func * (lhs: BigInt, l: Int64) -> BigInt { lhs.mulImpl64(l < 0, l.magnitude) }
+    static func * (lhs: BigInt, dw: UInt64) -> BigInt { lhs.mulImpl64(false, dw) }
+
+    static func / (lhs: BigInt, n: Int32) -> BigInt { lhs.divImpl32(n < 0, UInt32(n.magnitude)) }
+    static func / (lhs: BigInt, w: UInt32) -> BigInt { lhs.divImpl32(false, w) }
+    static func / (lhs: BigInt, l: Int64) -> BigInt { lhs.divImpl64(l < 0, l.magnitude) }
+    static func / (lhs: BigInt, dw: UInt64) -> BigInt { lhs.divImpl64(false, dw) }
+
+    static func % (lhs: BigInt, n: Int32) -> BigInt { lhs.remModImpl64(UInt64(UInt32(n.magnitude)), false) }
+    static func % (lhs: BigInt, w: UInt32) -> BigInt { lhs.remModImpl64(UInt64(w), false) }
+    static func % (lhs: BigInt, l: Int64) -> BigInt { lhs.remModImpl64(l.magnitude, false) }
+    static func % (lhs: BigInt, dw: UInt64) -> BigInt { lhs.remModImpl64(dw, false) }
 }
 
 // ============================================================================
 // DEFERRED from BigInt.kt (next pushes):
-//   - arithmetic operators +,-,*,/,%, mod, pow, negate, abs, gcd  (need
-//     MutableBigInt + addImpl/mulImpl/divImpl/remModImpl)
+//   - pow / gcd / square           → Phase 3 BigIntAlgorithms
 //   - from(Double) / fromULongShiftLeft
 //   - from(String/CharSequence/CharArray/ByteArray)  (Phase 3 ParsePrint +
 //     Latin1Iterator); random; binary-array constructors
-//   - bit ops (and/or/xor/shl/shr/testBit-returning-BigInt/setBit), square
+//   - bit ops (and/or/xor/shl/shr/setBit), public square
 //   - Equatable/Hashable per Kotlin's exact equals/hashCode (verify vs source)
 // ============================================================================

@@ -60,10 +60,18 @@ final class Magia {
         }
     }
 
-    /// Kotlin `IntArray.copyOf(newSize)` restricted to the first `n` limbs.
-    func copyOf(_ n: Int) -> Magia {
-        Magia(limbs: ContiguousArray(a[0..<n]))
+    /// Kotlin `IntArray.copyOf(newSize)`: copy min(newSize, count) limbs into a
+    /// fresh array of `newSize`, zero-padding (or truncating) as needed.
+    func copyOf(_ newSize: Int) -> Magia {
+        let dst = Magia(newSize)
+        let m = Swift.min(newSize, a.count)
+        var i = 0
+        while i < m { dst.a[i] = a[i]; i += 1 }
+        return dst
     }
+
+    /// Kotlin `IntArray.copyOf()` — full-length copy.
+    func copyOf() -> Magia { copyOf(a.count) }
 
     /// Kotlin `IntArray.fill(value, fromIndex, toIndex)`.
     func fill(_ value: Limb, _ fromIndex: Int, _ toIndex: Int) {
