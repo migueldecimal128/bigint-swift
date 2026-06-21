@@ -24,6 +24,7 @@ private func _setSub(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -
 private func _setMul(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -> Int {
     setMul(z, x, xn, y, yn)
 }
+private func _setSqr(_ z: Magia, _ x: Magia, _ xn: Int) -> Int { setSqr(z, x, xn) }
 private func _trySetDivFastPath(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -> Int {
     trySetDivFastPath(z, x, xn, y, yn)
 }
@@ -613,11 +614,60 @@ final class MutableBigInt: BigIntNumber {
         biStat(.MBI_SET_MOD_PRIMITIVE)
         return self
     }
+
+    // MARK: square (engine: setSqr/setSqrKaratsuba)
+
+    @discardableResult func setSqr(_ n: Int32) -> MutableBigInt { setSqr(UInt32(n.magnitude)) }
+
+    @discardableResult func setSqr(_ w: UInt32) -> MutableBigInt {
+        let abs = UInt64(w)
+        biStat(.MBI_SET_SQR_PRIMITIVE)
+        return set(abs &* abs)
+    }
+
+    @discardableResult func setSqr(_ l: Int64) -> MutableBigInt { setSqr(l.magnitude) }
+
+    @discardableResult func setSqr(_ dw: UInt64) -> MutableBigInt {
+        biStat(.MBI_SET_SQR_PRIMITIVE)
+        let lo = dw &* dw
+        let hi = unsignedMulHi(dw, dw)
+        return set(false, hi, lo)
+    }
+
+    @discardableResult func setSqr(_ x: BigIntNumber) -> MutableBigInt {
+        verify(x.isNormalized())
+        let xNormLen = Int(x.meta.normLen)
+        if xNormLen == 0 { return setZero() }
+        if xNormLen < KARATSUBA_SQR_THRESHOLD {
+            let xMagia = x.magia
+            ensureTmp1CapacityZeroed(xNormLen + xNormLen, .MBI_RESIZE_TMP1_SQR)
+            swapTmp1()
+            updateMeta(Meta(signBit: 0, normLen: Int32(_setSqr(magia, xMagia, xNormLen))))
+            biStat(.MBI_SET_SQR_SCHOOLBOOK)
+            return self
+        } else {
+            return karatsubaSetSqr(x)
+        }
+    }
+
+    @discardableResult func karatsubaSetSqr(_ a: BigIntNumber) -> MutableBigInt {
+        let n = Int(a.meta.normLen)
+        if n <= 1 { return setSqr(a) }
+        let k1 = (n + 1) / 2
+        let zLen = 2 * n
+        ensureTmp1CapacityZeroed(zLen + 1, .MBI_RESIZE_TMP1_KARATSUBA_SQR)
+        ensureTmp2Capacity(3 * k1 + 3, .MBI_RESIZE_TMP2_KARATSUBA_Z1)
+        let zNormLen = setSqrKaratsuba(tmp1, a.magia, Int(a.meta.normLen), tmp2)
+        swapTmp1()
+        updateMeta(Meta(Int32(zNormLen)))
+        biStat(.MBI_SET_SQR_KARATSUBA)
+        return self
+    }
 }
 
 // ============================================================================
 // PHASE 2 REMAINING — MutableBigInt (MutableBigInt.kt):
-//   setSqr, karatsubaSetSqr, setPow/mutPow, addSquareOf, addAbsValueOf,
-//   setBit/clearBit/applyBitMask, setAnd/setOr/setXor, montgomeryRedc, and the
-//   +=/-=/*=/... operators.
+//   setPow/mutPow (-> Phase 3 BigIntAlgorithms.tryPowFastPath/powLeftToRight),
+//   addSquareOf, addAbsValueOf, setBit/clearBit/applyBitMask,
+//   setAnd/setOr/setXor, montgomeryRedc, and the +=/-=/*=/... operators.
 // ============================================================================
