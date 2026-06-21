@@ -24,6 +24,18 @@ private func _setSub(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -
 private func _setMul(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -> Int {
     setMul(z, x, xn, y, yn)
 }
+private func _trySetDivFastPath(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -> Int {
+    trySetDivFastPath(z, x, xn, y, yn)
+}
+private func _trySetDivFastPath64(_ z: Magia, _ x: Magia, _ xn: Int, _ yDw: UInt64) -> Int {
+    trySetDivFastPath64(z, x, xn, yDw)
+}
+private func _trySetRemFastPath(_ z: Magia, _ x: Magia, _ xn: Int, _ y: Magia, _ yn: Int) -> Int {
+    trySetRemFastPath(z, x, xn, y, yn)
+}
+private func _setRem(_ z: Magia, _ x: Magia, _ xn: Int, _ xTmp: Magia?, _ y: Magia, _ yn: Int, _ yTmp: Magia?) -> Int {
+    setRem(z, x, xn, xTmp, y, yn, yTmp)
+}
 
 final class MutableBigInt: BigIntNumber {
     var meta: Meta
@@ -477,12 +489,135 @@ final class MutableBigInt: BigIntNumber {
         biStat(.MBI_SET_BITWISE_OP)
         return self
     }
+    // MARK: div (engine: setDiv32/setDivKnuth/setDivKnuth64/trySetDivFastPath*)
+
+    @discardableResult func setDiv(_ x: MutableBigInt, _ n: Int32) -> MutableBigInt { setDivImpl32(x, n < 0, UInt32(n.magnitude)) }
+    @discardableResult func setDiv(_ x: MutableBigInt, _ w: UInt32) -> MutableBigInt { setDivImpl32(x, false, w) }
+    @discardableResult func setDiv(_ x: MutableBigInt, _ l: Int64) -> MutableBigInt { setDivImpl64(x, l < 0, l.magnitude) }
+    @discardableResult func setDiv(_ x: MutableBigInt, _ dw: UInt64) -> MutableBigInt { setDivImpl64(x, false, dw) }
+
+    @discardableResult func setDiv(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+        let xNormLen = Int(x.meta.normLen)
+        let yNormLen = Int(y.meta.normLen)
+        ensureMagiaCapacityDiscard(xNormLen - yNormLen + 1)
+        if !trySetDivFastPath(x, y) {
+            ensureTmp1Capacity(xNormLen + 1, .MBI_RESIZE_TMP1_KNUTH_DIVIDEND)
+            if yNormLen > 2 {
+                biStat(.MBI_SET_DIV_BI_KNUTH)
+                ensureTmp2Capacity(yNormLen, .MBI_RESIZE_TMP2_KNUTH_DIVISOR)
+                updateMeta(Meta(signBit: x.meta.signBit ^ y.meta.signBit,
+                                normLen: Int32(setDivKnuth(magia, x.magia, xNormLen, tmp1, y.magia, yNormLen, tmp2))))
+            } else {
+                verify(yNormLen == 2)
+                biStat(.MBI_SET_DIV_64_KNUTH)
+                // Magnitude (not sign-applied toULong) — matches setRem's 2-limb path.
+                updateMeta(Meta(signBit: x.meta.signBit ^ y.meta.signBit,
+                                normLen: Int32(setDivKnuth64(magia, x.magia, xNormLen, tmp1, y.toULongMagnitude()))))
+            }
+        }
+        return self
+    }
+
+    @discardableResult private func setDivImpl32(_ x: BigIntNumber, _ ySign: Bool, _ yW: Limb) -> MutableBigInt {
+        biStat(.MBI_SET_DIV_PRIMITIVE)
+        ensureMagiaCapacityDiscard(Int(x.meta.normLen))
+        let normLen = setDiv32(magia, x.magia, Int(x.meta.normLen), yW)
+        updateMeta(Meta(signFlag: x.meta.signFlag != ySign, normLen: Int32(normLen)))
+        return self
+    }
+
+    @discardableResult private func setDivImpl64(_ x: BigIntNumber, _ ySign: Bool, _ yDw: UInt64) -> MutableBigInt {
+        biStat(.MBI_SET_DIV_PRIMITIVE)
+        ensureMagiaCapacityDiscard(Int(x.meta.normLen) - 1 + 1)   // yDw might represent a single limb
+        if trySetDivFastPath64(x, ySign, yDw) { return self }
+        ensureTmp1Capacity(Int(x.meta.normLen) + 1, .MBI_RESIZE_TMP1_KNUTH_DIVIDEND)
+        let normLen = setDivKnuth64(magia, x.magia, Int(x.meta.normLen), tmp1, yDw)
+        updateMeta(Meta(signFlag: x.meta.signFlag != ySign, normLen: Int32(normLen)))
+        return self
+    }
+
+    @discardableResult private func trySetDivFastPath(_ x: BigIntNumber, _ y: BigIntNumber) -> Bool {
+        let qSignFlag = x.meta.signFlag != y.meta.signFlag
+        let qNormLen = _trySetDivFastPath(magia, x.magia, Int(x.meta.normLen), y.magia, Int(y.meta.normLen))
+        if qNormLen < 0 { return false }
+        updateMeta(Meta(signFlag: qSignFlag, normLen: Int32(qNormLen)))
+        biStat(.MBI_SET_DIV_BI_FASTPATH)
+        return true
+    }
+
+    @discardableResult private func trySetDivFastPath64(_ x: BigIntNumber, _ ySign: Bool, _ yDw: UInt64) -> Bool {
+        let qSignFlag = x.meta.signFlag != ySign
+        let qNormLen = _trySetDivFastPath64(magia, x.magia, Int(x.meta.normLen), yDw)
+        if qNormLen < 0 { return false }
+        updateMeta(Meta(signFlag: qSignFlag, normLen: Int32(qNormLen)))
+        return true
+    }
+
+    // MARK: rem (engine: calcRem64/setRem/trySetRemFastPath)
+
+    @discardableResult private func trySetRemFastPath(_ x: BigIntNumber, _ y: BigIntNumber) -> Bool {
+        let rSignFlag = x.meta.signFlag
+        let rNormLen = _trySetRemFastPath(magia, x.magia, Int(x.meta.normLen), y.magia, Int(y.meta.normLen))
+        if rNormLen < 0 { return false }
+        updateMeta(Meta(signFlag: rSignFlag, normLen: Int32(rNormLen)))
+        biStat(.MBI_SET_REM_BI_FASTPATH)
+        return true
+    }
+
+    @discardableResult func setRem(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setRemImpl(x, UInt64(n.magnitude)) }
+    @discardableResult func setRem(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setRemImpl(x, UInt64(w)) }
+    @discardableResult func setRem(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setRemImpl(x, l.magnitude) }
+    @discardableResult func setRem(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setRemImpl(x, dw) }
+
+    @discardableResult func setRem(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+        ensureMagiaCapacityCopy(min(Int(x.meta.normLen), Int(y.meta.normLen)))
+        if trySetRemFastPath(x, y) { return self }
+        if y.meta.normLen == 2 {
+            return setRemImpl(x, (UInt64(y.magia[1]) << 32) | UInt64(y.magia[0]))
+        }
+        ensureTmp1Capacity(Int(x.meta.normLen) + 1, .MBI_RESIZE_TMP1_KNUTH_DIVIDEND)
+        ensureTmp2Capacity(Int(y.meta.normLen), .MBI_RESIZE_TMP2_KNUTH_DIVISOR)
+        let rNormLen = _setRem(magia, x.magia, Int(x.meta.normLen), tmp1, y.magia, Int(y.meta.normLen), tmp2)
+        updateMeta(Meta(signBit: x.meta.signBit, normLen: Int32(rNormLen)))
+        biStat(.MBI_SET_REM_BI_KNUTH)
+        return self
+    }
+
+    @discardableResult private func setRemImpl(_ x: BigIntNumber, _ yDw: UInt64) -> MutableBigInt {
+        biStat(.MBI_SET_REM_PRIMITIVE)
+        ensureTmp1Capacity(Int(x.meta.normLen) + 1, .MBI_RESIZE_TMP1_KNUTH_DIVIDEND)
+        let rem = calcRem64(x.magia, Int(x.meta.normLen), tmp1, yDw)
+        return set(x.meta.signFlag, rem)
+    }
+
+    // MARK: mod (non-negative result; rejects negative modulus)
+
+    @discardableResult func setMod(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setModImpl(x, n < 0, UInt64(n.magnitude)) }
+    @discardableResult func setMod(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setModImpl(x, false, UInt64(w)) }
+    @discardableResult func setMod(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setModImpl(x, l < 0, l.magnitude) }
+    @discardableResult func setMod(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setModImpl(x, false, dw) }
+
+    @discardableResult func setMod(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
+        if y.meta.isNegative { throwModNegDivisor() }
+        setRem(x, y)
+        if isNegative() { setAdd(self, y) }
+        biStat(.MBI_SET_MOD_BI_KNUTH)
+        return self
+    }
+
+    @discardableResult private func setModImpl(_ x: BigIntNumber, _ ySign: Bool, _ yDw: UInt64) -> MutableBigInt {
+        if ySign { throwModNegDivisor() }
+        setRem(x, yDw)
+        if isNegative() { setAdd(self, yDw) }
+        BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_REM_PRIMITIVE.ordinal] -= 1
+        biStat(.MBI_SET_MOD_PRIMITIVE)
+        return self
+    }
 }
 
 // ============================================================================
 // PHASE 2 REMAINING — MutableBigInt (MutableBigInt.kt):
-//   setSqr, karatsubaSetSqr, setPow/mutPow, setDiv (+Impl32/64,
-//   trySetDivFastPath*), setRem (+Impl, trySetRemFastPath), setMod (+Impl),
-//   addSquareOf, addAbsValueOf, setBit/clearBit/applyBitMask,
-//   setAnd/setOr/setXor, montgomeryRedc, and the +=/-=/*=/... operators.
+//   setSqr, karatsubaSetSqr, setPow/mutPow, addSquareOf, addAbsValueOf,
+//   setBit/clearBit/applyBitMask, setAnd/setOr/setXor, montgomeryRedc, and the
+//   +=/-=/*=/... operators.
 // ============================================================================
