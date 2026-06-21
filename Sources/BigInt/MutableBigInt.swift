@@ -760,10 +760,85 @@ final class MutableBigInt: BigIntNumber {
     }
 
     @discardableResult func mutXor(_ y: BigIntNumber) -> MutableBigInt { setXor(self, y) }
+
+    // MARK: addSquareOf / addAbsValueOf (accumulators)
+
+    func addSquareOf(_ n: Int32) {
+        biStat(.MBI_ADD_SQR_PRIMITIVE)
+        BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_ADD_SUB_PRIMITIVE.ordinal] -= 1
+        setAdd(self, UInt64(bitPattern: Int64(n) &* Int64(n)))
+    }
+    @discardableResult func addSquareOf(_ w: UInt32) -> MutableBigInt {
+        BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_ADD_SUB_PRIMITIVE.ordinal] -= 1
+        biStat(.MBI_ADD_SQR_PRIMITIVE)
+        return setAdd(self, UInt64(w) &* UInt64(w))
+    }
+    func addSquareOf(_ l: Int64) { _ = addSquareOf(l.magnitude) }
+    @discardableResult func addSquareOf(_ dw: UInt64) -> MutableBigInt {
+        biStat(.MBI_ADD_SQR_PRIMITIVE)
+        let lo64 = dw &* dw
+        if (dw >> 32) == 0 {
+            BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_ADD_SUB_PRIMITIVE.ordinal] -= 1
+            return setAdd(self, lo64)
+        }
+        let hi64 = unsignedMulHi(dw, dw)
+        if tmp1.size < 4 { tmp1 = Magia(4) }
+        tmp1[0] = lo64.toLimb()
+        tmp1[1] = (lo64 >> 32).toLimb()
+        tmp1[2] = hi64.toLimb()
+        tmp1[3] = (hi64 >> 32).toLimb()
+        let normLen = magia_normLen(tmp1, 4)
+        BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_ADD_SUB_BI.ordinal] -= 1
+        return setAddImpl(self, Meta(signBit: 0, normLen: Int32(normLen)), tmp1)
+    }
+    func addSquareOf(_ bi: BigIntNumber) {
+        ensureTmp1CapacityZeroed(Int(bi.meta.normLen) * 2, .MBI_RESIZE_TMP1_SQR)
+        let normLenSqr = magia_setSqr(tmp1, bi.magia, Int(bi.meta.normLen))
+        setAddImpl(self, Meta(signBit: 0, normLen: Int32(normLenSqr)), tmp1)
+        validate()
+        BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_ADD_SUB_BI.ordinal] -= 1
+        biStat(.MBI_ADD_SQR_BI)
+    }
+
+    func addAbsValueOf(_ n: Int32) { mutAddImpl32(false, UInt32(n.magnitude)) }
+    func addAbsValueOf(_ l: Int64) { mutAddImpl64(false, l.magnitude) }
+    func addAbsValueOf(_ bi: BigIntNumber) { setAddImpl(self, bi.meta.abs(), bi.magia) }
+
+    // MARK: compound-assignment operators (mutate the lhs accumulator)
+
+    static func += (lhs: MutableBigInt, n: Int32) { lhs.mutAddImpl32(n < 0, UInt32(n.magnitude)) }
+    static func += (lhs: MutableBigInt, w: UInt32) { lhs.mutAddImpl32(false, w) }
+    static func += (lhs: MutableBigInt, l: Int64) { lhs.mutAddImpl64(l < 0, l.magnitude) }
+    static func += (lhs: MutableBigInt, dw: UInt64) { lhs.mutAddImpl64(false, dw) }
+    static func += (lhs: MutableBigInt, bi: BigIntNumber) { lhs.mutAddImpl(bi.meta, bi.magia) }
+
+    static func -= (lhs: MutableBigInt, n: Int32) { lhs.mutAddImpl32(n > 0, UInt32(n.magnitude)) }
+    static func -= (lhs: MutableBigInt, w: UInt32) { lhs.mutAddImpl32(true, w) }
+    static func -= (lhs: MutableBigInt, l: Int64) { lhs.mutAddImpl64(l > 0, l.magnitude) }
+    static func -= (lhs: MutableBigInt, dw: UInt64) { lhs.mutAddImpl64(true, dw) }
+    static func -= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.mutAddImpl(bi.meta.negate(), bi.magia) }
+
+    static func *= (lhs: MutableBigInt, n: Int32) { lhs.setMul(lhs, n) }
+    static func *= (lhs: MutableBigInt, w: UInt32) { lhs.setMul(lhs, w) }
+    static func *= (lhs: MutableBigInt, l: Int64) { lhs.setMul(lhs, l) }
+    static func *= (lhs: MutableBigInt, dw: UInt64) { lhs.setMul(lhs, dw) }
+    static func *= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.setMul(lhs, bi) }
+
+    static func /= (lhs: MutableBigInt, n: Int32) { lhs.setDiv(lhs, n) }
+    static func /= (lhs: MutableBigInt, w: UInt32) { lhs.setDiv(lhs, w) }
+    static func /= (lhs: MutableBigInt, l: Int64) { lhs.setDiv(lhs, l) }
+    static func /= (lhs: MutableBigInt, dw: UInt64) { lhs.setDiv(lhs, dw) }
+    static func /= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.setDiv(lhs, bi) }
+
+    static func %= (lhs: MutableBigInt, n: Int32) { lhs.setRem(lhs, n) }
+    static func %= (lhs: MutableBigInt, w: UInt32) { lhs.setRem(lhs, w) }
+    static func %= (lhs: MutableBigInt, l: Int64) { lhs.setRem(lhs, l) }
+    static func %= (lhs: MutableBigInt, dw: UInt64) { lhs.setRem(lhs, dw) }
+    static func %= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.setRem(lhs, bi) }
 }
 
 // ============================================================================
-// PHASE 2 REMAINING — MutableBigInt (MutableBigInt.kt):
-//   setPow/mutPow (-> Phase 3 BigIntAlgorithms.tryPowFastPath/powLeftToRight),
-//   addSquareOf, addAbsValueOf, montgomeryRedc, and the +=/-=/*=/... operators.
+// PHASE 2 REMAINING — MutableBigInt: setPow/mutPow + montgomeryRedc (both ->
+// Phase 3 BigIntAlgorithms). equals/hashCode intentionally omitted (MutableBigInt
+// is non-hashable by design; EQ/NE on BigIntNumber provide numeric comparison).
 // ============================================================================
