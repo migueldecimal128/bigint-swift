@@ -3,12 +3,6 @@ import Testing
 
 @Suite struct TestKaratsubaSquare1 {
 
-    private func mag(_ limbs: [Int32]) -> Magia {
-        var a = ContiguousArray<Limb>()
-        for v in limbs { a.append(Limb(bitPattern: v)) }
-        return Magia(limbs: a)
-    }
-
     private func checkKaratsubaSquare(_ a: BigInt) {
         let n = Int(a.meta.normLen)
         precondition(n >= 2)

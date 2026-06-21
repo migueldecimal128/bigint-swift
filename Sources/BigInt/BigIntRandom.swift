@@ -65,12 +65,13 @@ extension BigInt {
         if maxBitLen > 0 {
             var zeroTest: Limb = 0
             let magia = magia_newWithBitLen(maxBitLen)
-            let topBits = maxBitLen & 0x1F
+            let topBits = maxBitLen & 0x3F
             // note parenthesization on this mask creation ... 0 - 1
-            var mask: Limb = ((UInt32(bitPattern: 0 &- Int32(topBits)) >> 31) << topBits) &- 1
+            // (topBits == 0 ⇒ all-ones top limb; else low-topBits mask)
+            var mask: Limb = ((UInt64(bitPattern: 0 &- Int64(topBits)) >> 63) << topBits) &- 1
             var i = magia.size - 1
             while i >= 0 {
-                let rand = Limb(bitPattern: rng.nextInt()) & mask
+                let rand = rng.next() & mask          // one UInt64 draw fills one 64-bit limb
                 magia[i] = rand
                 zeroTest |= rand
                 mask = Limb(bitPattern: -1)
@@ -109,19 +110,19 @@ extension BigInt {
     ) -> BigInt {
         if bitLen > 0 {
             let magia = magia_newWithBitLen(bitLen)
-            let topBits = bitLen & 0x1F
-            var mask: Limb = ((UInt32(bitPattern: 0 &- Int32(topBits)) >> 31) << topBits) &- 1
+            let topBits = bitLen & 0x3F
+            var mask: Limb = ((UInt64(bitPattern: 0 &- Int64(topBits)) >> 63) << topBits) &- 1
             var i = magia.size - 1
             while i >= 0 {
-                let rand = Limb(bitPattern: rng.nextInt()) & mask
+                let rand = rng.next() & mask          // one UInt64 draw fills one 64-bit limb
                 magia[i] = rand
                 mask = Limb(bitPattern: -1)
                 i -= 1
             }
             let topBitIndex = bitLen - 1
-            let limbIndex = topBitIndex >> 5
+            let limbIndex = topBitIndex >> 6
             verify(limbIndex == magia.size - 1)
-            magia[limbIndex] = magia[limbIndex] | (Limb(1) << (topBitIndex & 0x1F))
+            magia[limbIndex] = magia[limbIndex] | (Limb(1) << (topBitIndex & 0x3F))
             magia[0] = magia[0] | (ensureOdd ? 1 : 0)
             let sign = withRandomSign && rng.nextBoolean()
             biStat(.BI_CONSTRUCT_RANDOM)

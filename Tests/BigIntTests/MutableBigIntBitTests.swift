@@ -11,14 +11,14 @@ import Testing
         let neg = v < 0
         let mag = v.magnitude
         let m = Magia(5)
-        for i in 0..<4 { m[i] = Limb(truncatingIfNeeded: mag >> (i * 32)) }
+        for i in 0..<2 { m[i] = Limb(truncatingIfNeeded: mag >> (i * 64)) }
         return BigInt.fromNonNormalizedOrZero(neg, m)
     }
     private func bigU(_ mag: UInt128) -> BigInt { big(Int128(mag)) }   // non-negative
     private func u128mag(_ x: BigIntNumber) -> UInt128 {
         var mag: UInt128 = 0
         var i = Int(x.meta.normLen) - 1
-        while i >= 0 { mag = (mag << 32) | UInt128(x.magia[i]); i -= 1 }
+        while i >= 0 { mag = (mag << 64) | UInt128(x.magia[i]); i -= 1 }
         return mag
     }
     private func i128(_ x: BigIntNumber) -> Int128 {
@@ -37,7 +37,7 @@ import Testing
         }
         func u128(_ bits: Int) -> UInt128 {
             var v: UInt128 = 0
-            for i in 0..<4 { v |= UInt128(Limb(truncatingIfNeeded: next())) << (i * 32) }
+            for i in 0..<2 { v |= UInt128(next()) << (i * 64) }
             if bits < 128 { v &= (UInt128(1) << bits) - 1 }
             return v
         }

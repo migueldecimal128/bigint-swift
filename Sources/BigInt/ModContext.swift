@@ -119,9 +119,9 @@ public final class ModContext {
             self.mu = Barrett.calcMu(m)
             self.mSquared = m.sqr()
             self.kBits = m.magnitudeBitLen()
-            self.k = (kBits + 0x1F) >> 5
-            self.shiftKMinus1Bits = (k - 1) * 32
-            self.shiftKPlus1Bits = (k + 1) * 32
+            self.k = (kBits + 0x3F) >> 6
+            self.shiftKMinus1Bits = (k - 1) * 64
+            self.shiftKPlus1Bits = (k + 1) * 64
             self.bPowKPlus1 = BigInt.withSetBit(shiftKPlus1Bits)
             self.q = MutableBigInt.withBitCapacityHint(2 * kBits + 32)
             self.r1 = MutableBigInt.withBitCapacityHint(kBits + 32)
@@ -131,7 +131,7 @@ public final class ModContext {
         }
 
         static func calcMu(_ m: BigInt) -> BigInt {
-            BigInt.withSetBit(2 * Int(m.meta.normLen) * 32) / m
+            BigInt.withSetBit(2 * Int(m.meta.normLen) * 64) / m
         }
 
         func reduceInto(_ x: MutableBigInt, _ out: MutableBigInt) {
@@ -248,18 +248,21 @@ public final class ModContext {
             self.modulus = modulus
             self.k = Int(modulus.meta.normLen)
             self.np = Montgomery.computeNp(modulus.magia[0])
-            self.r2 = BigInt.withSetBit(64 * k) % modulus
+            // r2 = R^2 mod m, R = 2^(64·k); R^2 = 2^(2·64·k) = 2^(128·k)
+            self.r2 = BigInt.withSetBit(128 * k) % modulus
             self.precomputedPowers = (0..<(1 << 6)).map { _ in MutableBigInt() }
         }
 
+        // -n^-1 mod 2^64 (Newton doubling: 2→4→8→16→32→64 good bits, 5 steps)
         static func computeNp(_ n: Limb) -> Limb {
             precondition((n & 1) == 1)
-            var x = (n &* 3) ^ 2     // 2 good bits
-            x = x &* (2 &- n &* x)
-            x = x &* (2 &- n &* x)
-            x = x &* (2 &- n &* x)
-            x = x &* (2 &- n &* x)
-            return 0 &- x            // (-x.toInt()).toUInt()
+            var x = (n &* 3) ^ 2     // ~2 good bits
+            x = x &* (2 &- n &* x)   // 4
+            x = x &* (2 &- n &* x)   // 8
+            x = x &* (2 &- n &* x)   // 16
+            x = x &* (2 &- n &* x)   // 32
+            x = x &* (2 &- n &* x)   // 64
+            return 0 &- x            // -n^-1 mod 2^64
         }
 
         @discardableResult func toMontgomery(_ x: BigIntNumber, _ out: MutableBigInt) -> MutableBigInt {

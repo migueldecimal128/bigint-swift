@@ -50,19 +50,22 @@ extension BigIntNumber {
         if limb < 0x8000_0000 { return true }                  // Kotlin: limb >= 0
         return meta.isNegative && limb == 0x8000_0000          // Int.MIN_VALUE
     }
-    public func fitsUInt() -> Bool { meta.isPositive && meta.normLen <= 1 }
-    public func fitsLong() -> Bool {
-        if meta.normLen > 2 { return false }
-        if meta.normLen < 2 { return true }
-        if magia[1] < 0x8000_0000 { return true }              // Kotlin: magia[1] >= 0
-        return meta.isNegative && magia[1] == 0x8000_0000 && magia[0] == 0
+    public func fitsUInt() -> Bool {
+        meta.isPositive && (meta.normLen == 0 || (meta.normLen == 1 && magia[0] <= 0xFFFF_FFFF))
     }
-    public func fitsULong() -> Bool { meta.isPositive && meta.normLen <= 2 }
+    public func fitsLong() -> Bool {
+        if meta.normLen > 1 { return false }
+        if meta.normLen < 1 { return true }                    // zero
+        let limb = magia[0]
+        if limb < 0x8000_0000_0000_0000 { return true }        // Kotlin: limb >= 0
+        return meta.isNegative && limb == 0x8000_0000_0000_0000  // Int64.MIN_VALUE
+    }
+    public func fitsULong() -> Bool { meta.isPositive && meta.normLen <= 1 }
 
     // MARK: to-primitive (low bits, wrapping — matches Kotlin .toInt()/.toLong())
 
     public func toInt() -> Int32 {
-        isZero() ? 0 : (Int32(bitPattern: magia[0]) ^ meta.signMask) &- meta.signMask
+        isZero() ? 0 : (Int32(truncatingIfNeeded: magia[0]) ^ meta.signMask) &- meta.signMask
     }
     public func toIntExact() -> Int32 {
         if fitsInt() { return toInt() }
@@ -85,12 +88,8 @@ extension BigIntNumber {
     }
 
     public func toLong() -> Int64 {
-        let l: Int64
-        switch meta.normLen {
-        case 0: l = 0
-        case 1: l = Int64(magia[0])
-        default: l = Int64(bitPattern: (UInt64(magia[1]) << 32) | UInt64(magia[0]))
-        }
+        // low 64 bits of the magnitude = the first 64-bit limb, then apply sign
+        let l: Int64 = meta.normLen == 0 ? 0 : Int64(bitPattern: magia[0])
         let mask = Int64(meta.signMask)
         return (l ^ mask) &- mask
     }
@@ -114,19 +113,16 @@ extension BigIntNumber {
         return UInt64.max
     }
 
-    public func toUIntMagnitude() -> UInt32 { meta.normLen == 0 ? 0 : magia[0] }
+    public func toUIntMagnitude() -> UInt32 { meta.normLen == 0 ? 0 : UInt32(truncatingIfNeeded: magia[0]) }
     public func toULongMagnitude() -> UInt64 {
-        switch meta.normLen {
-        case 0: return 0
-        case 1: return UInt64(magia[0])
-        default: return (UInt64(magia[1]) << 32) | UInt64(magia[0])
-        }
+        // low 64 bits of the magnitude = the first 64-bit limb
+        meta.normLen == 0 ? 0 : magia[0]
     }
 
     public func modInt(_ n: Int32) -> Int32 {
         precondition(n > 0, "modulus must be > 0")
         precondition(!isNegative())
-        return Int32(bitPattern: magia_calcRem32(magia, Int(meta.normLen), UInt32(bitPattern: n)))
+        return Int32(truncatingIfNeeded: magia_calcRemLimb(magia, Int(meta.normLen), Limb(n)))
     }
 
     public func extractULongAtBitIndex(_ bitIndex: Int) -> UInt64 {
@@ -139,7 +135,7 @@ extension BigIntNumber {
     public func bitLengthBigIntegerStyle() -> Int {
         magia_bitLengthBigIntegerStyle(meta.signFlag, magia, Int(meta.normLen))
     }
-    public func magnitudeIntArrayLen() -> Int { (magnitudeBitLen() + 31) >> 5 }
+    public func magnitudeIntArrayLen() -> Int { (magnitudeBitLen() + 63) >> 6 }
     public func magnitudeLongArrayLen() -> Int { (magnitudeBitLen() + 63) >> 6 }
 
     public func calcTwosComplementByteLength() -> Int {
@@ -229,23 +225,20 @@ extension BigIntNumber {
 
     public func magnitudeHashCode() -> Int32 {
         verify(isNormalized())
-        let c4: Int32 = 31 &* 31 &* 31 &* 31
-        let c3: Int32 = 31 &* 31 &* 31
-        let c2: Int32 = 31 &* 31
+        // Cross-port parity: hash the SAME 32-bit-limb sequence the 32-bit ports
+        // do — each 64-bit limb as (low32, high32), Horner with factor 31. The
+        // top limb's high32 is skipped when zero (a 32-bit normalized array would
+        // not carry that trailing-zero limb).
         var h: Int32 = 0
-        var i = 0
         let n = Int(meta.normLen)
-        while i + 3 < n {
-            var t = c4 &* h
-            t = t &+ c3 &* Int32(bitPattern: magia[i])
-            t = t &+ c2 &* Int32(bitPattern: magia[i + 1])
-            t = t &+ 31 &* Int32(bitPattern: magia[i + 2])
-            t = t &+ Int32(bitPattern: magia[i + 3])
-            h = t
-            i += 4
-        }
+        var i = 0
         while i < n {
-            h = 31 &* h &+ Int32(bitPattern: magia[i])
+            let limb = magia[i]
+            h = 31 &* h &+ Int32(bitPattern: UInt32(truncatingIfNeeded: limb))
+            let hi = UInt32(truncatingIfNeeded: limb >> 32)
+            if hi != 0 || i != n - 1 {
+                h = 31 &* h &+ Int32(bitPattern: hi)
+            }
             i += 1
         }
         return h

@@ -159,7 +159,7 @@ enum BigIntAlgorithms {
         return squared.EQ(radicand)
     }
 
-    /// Montgomery REDC (CIOS), 32-bit limbs: t = t·R⁻¹ mod N, R = 2^(32·k).
+    /// Montgomery REDC (CIOS), 64-bit limbs: t = t·R⁻¹ mod N, R = 2^(64·k).
     /// Returns the normalized limb length of the reduced residue.
     static func montgomeryRedc(_ t: Magia, _ tLen: Int, _ n: Magia, _ k: Int, _ np: Limb) -> Int {
         precondition(k > 0 && k <= n.size)
@@ -171,26 +171,26 @@ enum BigIntAlgorithms {
 
         // Phase 1: eliminate low limbs one at a time
         for i in 0..<k {
-            let m = UInt64(t[i] &* np)            // (t[i] * np) mod 2^32
-            var carry: UInt64 = 0
+            let m = t[i] &* np                    // (t[i] * np) mod 2^64
+            var carry: DWord = 0
             var j = 0
             while j < k {
-                let acc = UInt64(t[i + j]) &+ m &* UInt64(n[j]) &+ carry
+                let acc = DWord(t[i + j]) &+ DWord(m) &* DWord(n[j]) &+ carry
                 t[i + j] = acc.toLimb()
-                carry = acc >> 32
+                carry = acc >> 64
                 j += 1
             }
-            carry = carry &+ UInt64(t[i + k])
+            carry = carry &+ DWord(t[i + k])
             t[i + k] = carry.toLimb()
             // propagate the remaining carry through the high limbs (a single-limb
-            // push loses a carry when t[i+k+1] is already 0xFFFFFFFF — observable
+            // push loses a carry when t[i+k+1] is already 0xFFFF…FFFF — observable
             // for sparse moduli just above a power of two)
-            var c = carry >> 32
+            var c = carry >> 64
             var idx = i + k + 1
             while c != 0 {
-                let acc = UInt64(t[idx]) &+ c
+                let acc = DWord(t[idx]) &+ c
                 t[idx] = acc.toLimb()
-                c = acc >> 32
+                c = acc >> 64
                 idx += 1
             }
         }

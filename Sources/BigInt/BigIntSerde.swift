@@ -2,8 +2,9 @@
 //
 // Port of BigIntSerde.kt — binary (two's-complement / magnitude, big/little
 // endian) byte-array I/O. Kotlin signed `Byte` → Swift `[UInt8]`; the same bit
-// patterns. The partial-limb tail uses signed Int64 so two's-complement sign
-// extension fills the high bytes with 0xFF for negatives.
+// patterns. 64-bit limbs ⇒ 8 bytes per limb; the two's-complement carry is a
+// DWord (UInt128). The partial-limb tail uses signed Int64 so two's-complement
+// sign extension fills the high bytes with 0xFF for negatives.
 
 enum BigIntSerde {
 
@@ -45,39 +46,37 @@ enum BigIntSerde {
             }
 
             let offB1 = isBigEndian ? -1 : 1
-            let offB2 = offB1 << 1
-            let offB3 = offB1 + offB2
             let step1LoToHi = offB1
-            let step4LoToHi = offB1 << 2
+            let step8LoToHi = offB1 << 3        // advance one 64-bit limb (8 bytes)
 
             let ibLast = offset + actualLen - 1
             let ibLsb = isBigEndian ? ibLast : offset
             let ibMsb = isBigEndian ? offset : ibLast
 
-            let negMask: UInt32 = bi.meta.isNegative ? 0xFFFF_FFFF : 0
-            let negByte = UInt8(truncatingIfNeeded: negMask)
+            let negMask: UInt64 = bi.meta.isNegative ? 0xFFFF_FFFF_FFFF_FFFF : 0
 
             var remaining = actualLen
             var ib = ibLsb
             var iw = 0
-            var carry: UInt64 = bi.meta.isNegative ? 1 : 0
+            var carry: DWord = bi.meta.isNegative ? 1 : 0
 
-            while remaining >= 4 && iw < normLen {
+            while remaining >= 8 && iw < normLen {
                 let v = bi.magia[iw]; iw += 1
-                carry = carry &+ UInt64(v ^ negMask)
+                carry = carry &+ DWord(v ^ negMask)
                 let w = carry.toLimb()
-                carry = carry >> 32
-                bytes[ib + offB3] = UInt8(truncatingIfNeeded: w >> 24)
-                bytes[ib + offB2] = UInt8(truncatingIfNeeded: w >> 16)
-                bytes[ib + offB1] = UInt8(truncatingIfNeeded: w >> 8)
-                bytes[ib] = UInt8(truncatingIfNeeded: w)
-                ib += step4LoToHi
-                remaining -= 4
+                carry = carry >> 64
+                var sh = 0
+                for k in 0..<8 {
+                    bytes[ib + k * offB1] = UInt8(truncatingIfNeeded: w >> sh)
+                    sh += 8
+                }
+                ib += step8LoToHi
+                remaining -= 8
             }
             if remaining > 0 {
                 let v: Limb = iw < normLen ? { let r = bi.magia[iw]; iw += 1; return r }() : 0
                 // signed: arithmetic >> sign-extends the final partial limb
-                var w = Int64(Int32(bitPattern: v ^ negMask)) &+ Int64(carry)
+                var w = Int64(bitPattern: v ^ negMask) &+ Int64(carry)
                 repeat {
                     bytes[ib] = UInt8(truncatingIfNeeded: w)
                     ib += step1LoToHi
@@ -98,16 +97,14 @@ enum BigIntSerde {
         if len == 0 { return MAGIA_ZERO }
 
         let offB1 = isBigEndian ? -1 : 1
-        let offB2 = offB1 << 1
-        let offB3 = offB1 + offB2
         let step1HiToLo = -offB1
-        let step4LoToHi = offB1 << 2
+        let step8LoToHi = offB1 << 3        // advance one 64-bit limb (8 bytes)
 
         let ibLast = off + len - 1
         let ibLsb = isBigEndian ? ibLast : off
         var ibMsb = isBigEndian ? off : ibLast
 
-        let negMask: UInt32 = isNegative ? 0xFFFF_FFFF : 0
+        let negMask: UInt64 = isNegative ? 0xFFFF_FFFF_FFFF_FFFF : 0
         let leadingFlushByte: UInt8 = isNegative ? 0xFF : 0x00
 
         var remaining = len
@@ -117,28 +114,33 @@ enum BigIntSerde {
             if remaining == 0 { return isNegative ? MAGIA_ONE : MAGIA_ZERO }
         }
 
-        let magia = Magia((remaining + 3) >> 2)
+        let magia = Magia((remaining + 7) >> 3)
         var ib = ibLsb
         var iw = 0
-        var carry: UInt64 = isNegative ? 1 : 0
+        var carry: DWord = isNegative ? 1 : 0
 
-        while remaining >= 4 {
-            let w = (UInt32(bytes[ib + offB3]) << 24) | (UInt32(bytes[ib + offB2]) << 16)
-                  | (UInt32(bytes[ib + offB1]) << 8) | UInt32(bytes[ib])
-            carry = carry &+ UInt64(w ^ negMask)
+        while remaining >= 8 {
+            var w: UInt64 = 0
+            var sh: UInt64 = 0
+            for k in 0..<8 {
+                w |= UInt64(bytes[ib + k * offB1]) << sh
+                sh += 8
+            }
+            carry = carry &+ DWord(w ^ negMask)
             magia[iw] = carry.toLimb(); iw += 1
-            carry = carry >> 32
+            carry = carry >> 64
             verify((carry >> 1) == 0)
-            ib += step4LoToHi
-            remaining -= 4
+            ib += step8LoToHi
+            remaining -= 8
         }
         if remaining > 0 {
             let nb = UInt8(truncatingIfNeeded: negMask)
-            let b3 = nb
-            let b2 = remaining == 3 ? bytes[ib + offB2] : nb
-            let b1 = remaining >= 2 ? bytes[ib + offB1] : nb
-            let b0 = bytes[ib]
-            let w = (UInt32(b3) << 24) | (UInt32(b2) << 16) | (UInt32(b1) << 8) | UInt32(b0)
+            var w: UInt64 = 0
+            for k in 0..<8 {
+                // bytes present for k < remaining; sign-fill the rest with nb
+                let byte: UInt8 = k < remaining ? bytes[ib + k * offB1] : nb
+                w |= UInt64(byte) << (8 * k)
+            }
             magia[iw] = (w ^ negMask) &+ carry.toLimb(); iw += 1
         }
         verify(iw == magia.size)
@@ -150,19 +152,8 @@ enum BigIntSerde {
     }
 
     static func magnitudeToLittleEndianLongArray(_ bi: BigIntNumber) -> [UInt64] {
-        let intLen = Int(bi.meta.normLen)
-        let longLen = (intLen + 1) >> 1
-        var z = [UInt64](repeating: 0, count: longLen)
-        var iw = 0
-        var il = 0
-        while intLen - iw >= 2 {
-            let lo = UInt64(bi.magia[iw])
-            let hi = UInt64(bi.magia[iw + 1]) << 32
-            z[il] = hi | lo
-            il += 1
-            iw += 2
-        }
-        if iw < intLen { z[il] = UInt64(bi.magia[iw]) }
-        return z
+        // At 64-bit limbs a limb IS a UInt64, so the old pair-join (two 32-bit
+        // limbs per UInt64) collapses to a straight copy of the magnitude limbs.
+        Array(bi.magia.a[0..<Int(bi.meta.normLen)])
     }
 }

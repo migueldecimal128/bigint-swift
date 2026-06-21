@@ -14,14 +14,14 @@ import Testing
     // each as an unsigned 32-bit limb (-1 -> 0xFFFFFFFF).
     private func magia(_ vals: [Int32]) -> Magia {
         var limbs = ContiguousArray<Limb>()
-        for v in vals { limbs.append(Limb(bitPattern: v)) }
+        for v in vals { limbs.append(Limb(bitPattern: Int64(v))) }
         return Magia(limbs: limbs)
     }
 
     // Compare a Magia's limbs (over its full size) against expected signed Ints.
     private func contentEquals(_ expected: [Int32], _ t: Magia) -> Bool {
         guard t.size == expected.count else { return false }
-        for i in 0..<expected.count where t[i] != Limb(bitPattern: expected[i]) {
+        for i in 0..<expected.count where t[i] != Limb(bitPattern: Int64(expected[i])) {
             return false
         }
         return true

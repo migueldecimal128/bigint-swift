@@ -11,47 +11,46 @@ import Testing
         let x = Magia(8)
         #expect(magia_setULong(x, 0) == 0)
         #expect(magia_setULong(x, 0xFFFF_FFFF) == 1)
-        #expect(magia_setULong(x, 0x1_0000_0000) == 2)
+        #expect(magia_setULong(x, 0x1_0000_0000) == 1)      // any UInt64 is one 64-bit limb
         let n = magia_setULong(x, 0xDEAD_BEEF_CAFE_F00D)
-        #expect(n == 2)
+        #expect(n == 1)
         #expect(magia_toRawULong(x, n) == 0xDEAD_BEEF_CAFE_F00D)
     }
 
-    @Test func mutAdd64CarriesIntoThirdLimb() {
+    @Test func mutAddCarriesIntoSecondLimb() {
         let x = Magia(8)
-        var n = magia_setULong(x, 0xFFFF_FFFF_FFFF_FFFF) // 2^64 - 1, two limbs
+        var n = magia_setULong(x, 0xFFFF_FFFF_FFFF_FFFF) // 2^64 - 1, one 64-bit limb
+        #expect(n == 1)
+        n = magia_mutAddLimb(x, n, 1)                       // -> 2^64, two limbs [0,1]
         #expect(n == 2)
-        n = magia_mutAdd64(x, n, 1)                       // -> 2^64, three limbs [0,0,1]
-        #expect(n == 3)
-        #expect(x[0] == 0 && x[1] == 0 && x[2] == 1)
+        #expect(x[0] == 0 && x[1] == 1)
     }
 
-    @Test func mutAdd32SimpleCarry() {
+    @Test func mutAddSimpleNoCarry() {
         let x = Magia(8)
         var n = magia_setULong(x, 0xFFFF_FFFF)
-        n = magia_mutAdd32(x, n, 1)                       // 2^32 -> [0,1]
-        #expect(n == 2 && x[0] == 0 && x[1] == 1)
+        n = magia_mutAddLimb(x, n, 1)                       // 2^32, still one 64-bit limb
+        #expect(n == 1 && x[0] == 0x1_0000_0000)
     }
 
     @Test func mutSub64BorrowAndTrim() {
         let x = Magia(8)
         var n = magia_setULong(x, 0x1_0000_0000)         // 2^32
-        n = magia_mutSub64(x, n, 1)                       // 2^32 - 1 -> single limb
+        n = magia_mutSubLimb(x, n, 1)                       // 2^32 - 1 -> single limb
         #expect(n == 1 && x[0] == 0xFFFF_FFFF)
 
         let y = Magia(8)
         var m = magia_setULong(y, 0)
         m = magia_setULong(y, 0xFFFF_FFFF_FFFF_FFFF)      // 2^64 - 1
-        m = magia_mutSub64(y, m, 0xFFFF_FFFF_FFFF_FFFF)   // -> 0, trims both limbs
+        m = magia_mutSubLimb(y, m, 0xFFFF_FFFF_FFFF_FFFF)   // -> 0, trims both limbs
         #expect(m == 0)
     }
 
     @Test func mutAddArrayCarryPropagation() {
-        let a = Magia(8); var an = magia_setULong(a, 0x1_0000_0000)   // 2^32
-        let b = Magia(8); let bn = magia_setULong(b, 0xFFFF_FFFF)     // 2^32 - 1
-        an = magia_mutAdd(a, an, b, bn)                                // -> 2^33 - 1
-        #expect(an == 2 && a[0] == 0xFFFF_FFFF && a[1] == 1)
-        #expect(magia_toRawULong(a, an) == 0x1_FFFF_FFFF)
+        let a = Magia(8); var an = magia_setULong(a, 0xFFFF_FFFF_FFFF_FFFF)  // 2^64 - 1
+        let b = Magia(8); let bn = magia_setULong(b, 1)                       // 1
+        an = magia_mutAdd(a, an, b, bn)                                       // -> 2^64 = [0, 1]
+        #expect(an == 2 && a[0] == 0 && a[1] == 1)
     }
 
     @Test func setSubBorrowAndNormalize() {

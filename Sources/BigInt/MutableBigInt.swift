@@ -48,9 +48,8 @@ public final class MutableBigInt: BigIntNumber {
     public convenience init(_ sign: Bool, _ dwMag: UInt64) {
         biStat(.MBI_CONSTRUCT_PRIMITIVE)
         let m = Magia(4)
-        m[0] = dwMag.toLimb()
-        m[1] = (dwMag >> 32).toLimb()
-        let normLen: Int32 = dwMag == 0 ? 0 : ((dwMag >> 32) == 0 ? 1 : 2)
+        m[0] = dwMag                                   // a UInt64 is one 64-bit limb
+        let normLen: Int32 = dwMag == 0 ? 0 : 1
         verify(_validateNormLenAndInjectPoison(m, Int(normLen)))
         self.init(Meta(signFlag: sign, normLen: normLen), m)
     }
@@ -141,10 +140,10 @@ public final class MutableBigInt: BigIntNumber {
         }
     }
     public func ensureMagiaBitCapacityDiscard(_ minBitLen: Int) {
-        ensureMagiaCapacityDiscard((minBitLen + 0x1F) >> 5)
+        ensureMagiaCapacityDiscard((minBitLen + 0x3F) >> 6)
     }
     private func ensureMagiaBitCapacityCopy(_ minBitLen: Int) {
-        ensureMagiaCapacityCopy((minBitLen + 0x1F) >> 5)
+        ensureMagiaCapacityCopy((minBitLen + 0x3F) >> 6)
     }
     private func ensureTmp1Capacity(_ requestedLimbLen: Int, _ resizeOp: StatsOp) {
         if requestedLimbLen > tmp1.size { resizeTmp1(max(limbCapacityHint, requestedLimbLen), resizeOp) }
@@ -167,12 +166,12 @@ public final class MutableBigInt: BigIntNumber {
 
     public func hintBitCapacity(_ bitCapacityHint: Int) -> MutableBigInt {
         if bitCapacityHint < 0 { fatalError() }
-        limbCapacityHint = max(limbCapacityHint, magia_calcHeapLimbQuantum((bitCapacityHint + 31) >> 5))
+        limbCapacityHint = max(limbCapacityHint, magia_calcHeapLimbQuantum((bitCapacityHint + 63) >> 6))
         return self
     }
     public func currentLimbCapacityHint() -> Int { limbCapacityHint }
     public func didExceedHint() -> Bool { magia.size > limbCapacityHint }
-    public func getHintBitCapacity() -> Int { limbCapacityHint * 32 }
+    public func getHintBitCapacity() -> Int { limbCapacityHint * 64 }
 
     // MARK: meta / basic setters
 
@@ -201,23 +200,18 @@ public final class MutableBigInt: BigIntNumber {
     @discardableResult public func set(_ bi: BigIntNumber) -> MutableBigInt { set(bi.meta, bi.magia) }
 
     @discardableResult public func set(_ sign: Bool, _ dw: UInt64) -> MutableBigInt {
-        let normLen = (64 - Int(dw.leadingZeroBitCount) + 31) >> 5
-        magia[0] = dw.toLimb()
-        magia[1] = (dw >> 32).toLimb()
-        updateMeta(Meta(signFlag: sign, normLen: Int32(normLen)))
+        let normLen: Int32 = dw == 0 ? 0 : 1          // a UInt64 is one 64-bit limb
+        magia[0] = dw
+        updateMeta(Meta(signFlag: sign, normLen: normLen))
         return self
     }
 
     @discardableResult public func set(_ sign: Bool, _ dwHi: UInt64, _ dwLo: UInt64) -> MutableBigInt {
-        let bitLen = dwHi == 0
-            ? 64 - Int(dwLo.leadingZeroBitCount)
-            : 128 - Int(dwHi.leadingZeroBitCount)
-        let normLen = (bitLen + 0x1F) >> 5
-        magia[0] = dwLo.toLimb()
-        magia[1] = (dwLo >> 32).toLimb()
-        magia[2] = dwHi.toLimb()
-        magia[3] = (dwHi >> 32).toLimb()
-        updateMeta(Meta(signFlag: sign, normLen: Int32(normLen)))
+        // a 128-bit value is two 64-bit limbs
+        let normLen: Int32 = dwHi != 0 ? 2 : (dwLo == 0 ? 0 : 1)
+        magia[0] = dwLo
+        magia[1] = dwHi
+        updateMeta(Meta(signFlag: sign, normLen: normLen))
         return self
     }
 
@@ -238,14 +232,14 @@ public final class MutableBigInt: BigIntNumber {
 
     // MARK: add / sub (engine: mutAdd*/mutSub*/setSub)
 
-    @discardableResult public func setAdd(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setAddImpl32(x, n < 0, UInt32(n.magnitude)) }
-    @discardableResult public func setAdd(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setAddImpl32(x, false, w) }
+    @discardableResult public func setAdd(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setAddImpl32(x, n < 0, UInt64(n.magnitude)) }
+    @discardableResult public func setAdd(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setAddImpl32(x, false, UInt64(w)) }
     @discardableResult public func setAdd(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setAddImpl64(x, l < 0, l.magnitude) }
     @discardableResult public func setAdd(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setAddImpl64(x, false, dw) }
     @discardableResult public func setAdd(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt { setAddImpl(x, y.meta, y.magia) }
 
-    @discardableResult public func setSub(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setAddImpl32(x, n >= 0, UInt32(n.magnitude)) }
-    @discardableResult public func setSub(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setAddImpl32(x, true, w) }
+    @discardableResult public func setSub(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setAddImpl32(x, n >= 0, UInt64(n.magnitude)) }
+    @discardableResult public func setSub(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setAddImpl32(x, true, UInt64(w)) }
     @discardableResult public func setSub(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setAddImpl64(x, l >= 0, l.magnitude) }
     @discardableResult public func setSub(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setAddImpl64(x, true, dw) }
     @discardableResult public func setSub(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt { setAddImpl(x, y.meta.negate(), y.magia) }
@@ -269,11 +263,11 @@ public final class MutableBigInt: BigIntNumber {
             set(ySign, UInt64(yW))
         } else if meta.signFlag == ySign {
             ensureMagiaCapacityCopy(normLen + 1)
-            updateMeta(Meta(signBit: meta.signBit, normLen: Int32(magia_mutAdd32(magia, normLen, yW))))
+            updateMeta(Meta(signBit: meta.signBit, normLen: Int32(magia_mutAddLimb(magia, normLen, yW))))
         } else {
             let cmp = magnitudeCompareTo(yW)
             if cmp > 0 {
-                updateMeta(Meta(signBit: meta.signBit, normLen: Int32(magia_mutSub32(magia, normLen, yW))))
+                updateMeta(Meta(signBit: meta.signBit, normLen: Int32(magia_mutSubLimb(magia, normLen, yW))))
             } else if cmp < 0 {
                 set(ySign, UInt64(yW &- magia[0]))
             } else {
@@ -302,11 +296,11 @@ public final class MutableBigInt: BigIntNumber {
             set(ySign, yDw)
         } else if meta.signFlag == ySign {
             ensureMagiaCapacityCopy(normLen + 2)
-            updateMeta(Meta(signBit: meta.signBit, normLen: Int32(magia_mutAdd64(magia, normLen, yDw))))
+            updateMeta(Meta(signBit: meta.signBit, normLen: Int32(magia_mutAddLimb(magia, normLen, yDw))))
         } else {
             let cmp = magnitudeCompareTo(yDw)
             if cmp > 0 {
-                updateMeta(Meta(signBit: meta.signBit, normLen: Int32(magia_mutSub64(magia, normLen, yDw))))
+                updateMeta(Meta(signBit: meta.signBit, normLen: Int32(magia_mutSubLimb(magia, normLen, yDw))))
             } else if cmp < 0 {
                 set(ySign, yDw &- magia_toRawULong(magia, normLen))
             } else {
@@ -365,17 +359,17 @@ public final class MutableBigInt: BigIntNumber {
         return self
     }
 
-    // MARK: mul (engine: setMul32/64/setMul)
+    // MARK: mul (engine: setMulLimb/setMul)
 
-    @discardableResult public func setMul(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setMulImpl(x, n < 0, UInt32(n.magnitude)) }
-    @discardableResult public func setMul(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setMulImpl(x, false, w) }
+    @discardableResult public func setMul(_ x: BigIntNumber, _ n: Int32) -> MutableBigInt { setMulImpl(x, n < 0, UInt64(n.magnitude)) }
+    @discardableResult public func setMul(_ x: BigIntNumber, _ w: UInt32) -> MutableBigInt { setMulImpl(x, false, UInt64(w)) }
     @discardableResult public func setMul(_ x: BigIntNumber, _ l: Int64) -> MutableBigInt { setMulImpl(x, l < 0, l.magnitude) }
     @discardableResult public func setMul(_ x: BigIntNumber, _ dw: UInt64) -> MutableBigInt { setMulImpl(x, false, dw) }
 
     @discardableResult public func setMul(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
         let xNormLen = Int(x.meta.normLen)
         let yNormLen = Int(y.meta.normLen)
-        if yNormLen <= 2 { return setMulImpl(x, y.meta.signFlag, y.toULongMagnitude()) }
+        if yNormLen <= 1 { return setMulImpl(x, y.meta.signFlag, y.toULongMagnitude()) }
         if y.isMagnitudePowerOfTwo() { return setShl(x, y.countTrailingZeroBits()) }
         let xMagia = x.magia
         let yMagia = y.magia
@@ -387,20 +381,12 @@ public final class MutableBigInt: BigIntNumber {
         return self
     }
 
+    // single-limb (UInt64) multiplier — at 64-bit limbs the old *32/*64 pair is one impl
     @discardableResult private func setMulImpl(_ x: BigIntNumber, _ wSign: Bool, _ w: Limb) -> MutableBigInt {
         let xMagia = x.magia
         ensureMagiaCapacityDiscard(Int(x.meta.normLen) + 1)
         updateMeta(Meta(signFlag: x.meta.signFlag != wSign,
-                        normLen: Int32(magia_setMul32(magia, xMagia, Int(x.meta.normLen), w))))
-        biStat(.MBI_SET_MUL_PRIMITIVE)
-        return self
-    }
-
-    @discardableResult private func setMulImpl(_ x: BigIntNumber, _ dwSign: Bool, _ dw: UInt64) -> MutableBigInt {
-        let xMagia = x.magia
-        ensureMagiaCapacityDiscard(Int(x.meta.normLen) + 2)
-        updateMeta(Meta(signFlag: x.meta.signFlag != dwSign,
-                        normLen: Int32(magia_setMul64(magia, xMagia, Int(x.meta.normLen), dw))))
+                        normLen: Int32(magia_setMulLimb(magia, xMagia, Int(x.meta.normLen), w))))
         biStat(.MBI_SET_MUL_PRIMITIVE)
         return self
     }
@@ -463,17 +449,17 @@ public final class MutableBigInt: BigIntNumber {
             verify(normLen > 0)
             if needsIncrement {
                 ensureMagiaBitCapacityCopy(zBitLen + 1)
-                normLen = magia_mutAdd32(magia, normLen, 1)
+                normLen = magia_mutAddLimb(magia, normLen, 1)
             }
             updateMeta(Meta(signFlag: x.meta.signFlag, normLen: Int32(normLen)))
         }
         biStat(.MBI_SET_BITWISE_OP)
         return self
     }
-    // MARK: div (engine: setDiv32/setDivKnuth/setDivKnuth64/trySetDivFastPath*)
+    // MARK: div (engine: setDivLimb/setDivKnuth/trySetDivFastPath)
 
-    @discardableResult public func setDiv(_ x: MutableBigInt, _ n: Int32) -> MutableBigInt { setDivImpl32(x, n < 0, UInt32(n.magnitude)) }
-    @discardableResult public func setDiv(_ x: MutableBigInt, _ w: UInt32) -> MutableBigInt { setDivImpl32(x, false, w) }
+    @discardableResult public func setDiv(_ x: MutableBigInt, _ n: Int32) -> MutableBigInt { setDivImpl32(x, n < 0, UInt64(n.magnitude)) }
+    @discardableResult public func setDiv(_ x: MutableBigInt, _ w: UInt32) -> MutableBigInt { setDivImpl32(x, false, UInt64(w)) }
     @discardableResult public func setDiv(_ x: MutableBigInt, _ l: Int64) -> MutableBigInt { setDivImpl64(x, l < 0, l.magnitude) }
     @discardableResult public func setDiv(_ x: MutableBigInt, _ dw: UInt64) -> MutableBigInt { setDivImpl64(x, false, dw) }
 
@@ -482,19 +468,13 @@ public final class MutableBigInt: BigIntNumber {
         let yNormLen = Int(y.meta.normLen)
         ensureMagiaCapacityDiscard(xNormLen - yNormLen + 1)
         if !trySetDivFastPath(x, y) {
+            // At 64-bit limbs every multi-limb divisor (yNormLen >= 2) uses the
+            // general Knuth path; the UInt64-divisor special case is gone.
             ensureTmp1Capacity(xNormLen + 1, .MBI_RESIZE_TMP1_KNUTH_DIVIDEND)
-            if yNormLen > 2 {
-                biStat(.MBI_SET_DIV_BI_KNUTH)
-                ensureTmp2Capacity(yNormLen, .MBI_RESIZE_TMP2_KNUTH_DIVISOR)
-                updateMeta(Meta(signBit: x.meta.signBit ^ y.meta.signBit,
-                                normLen: Int32(magia_setDivKnuth(magia, x.magia, xNormLen, tmp1, y.magia, yNormLen, tmp2))))
-            } else {
-                verify(yNormLen == 2)
-                biStat(.MBI_SET_DIV_64_KNUTH)
-                // Magnitude (not sign-applied toULong) — matches setRem's 2-limb path.
-                updateMeta(Meta(signBit: x.meta.signBit ^ y.meta.signBit,
-                                normLen: Int32(magia_setDivKnuth64(magia, x.magia, xNormLen, tmp1, y.toULongMagnitude()))))
-            }
+            biStat(.MBI_SET_DIV_BI_KNUTH)
+            ensureTmp2Capacity(yNormLen, .MBI_RESIZE_TMP2_KNUTH_DIVISOR)
+            updateMeta(Meta(signBit: x.meta.signBit ^ y.meta.signBit,
+                            normLen: Int32(magia_setDivKnuth(magia, x.magia, xNormLen, tmp1, y.magia, yNormLen, tmp2))))
         }
         return self
     }
@@ -502,19 +482,14 @@ public final class MutableBigInt: BigIntNumber {
     @discardableResult private func setDivImpl32(_ x: BigIntNumber, _ ySign: Bool, _ yW: Limb) -> MutableBigInt {
         biStat(.MBI_SET_DIV_PRIMITIVE)
         ensureMagiaCapacityDiscard(Int(x.meta.normLen))
-        let normLen = magia_setDiv32(magia, x.magia, Int(x.meta.normLen), yW)
+        let normLen = magia_setDivLimb(magia, x.magia, Int(x.meta.normLen), yW)
         updateMeta(Meta(signFlag: x.meta.signFlag != ySign, normLen: Int32(normLen)))
         return self
     }
 
     @discardableResult private func setDivImpl64(_ x: BigIntNumber, _ ySign: Bool, _ yDw: UInt64) -> MutableBigInt {
-        biStat(.MBI_SET_DIV_PRIMITIVE)
-        ensureMagiaCapacityDiscard(Int(x.meta.normLen) - 1 + 1)   // yDw might represent a single limb
-        if trySetDivFastPath64(x, ySign, yDw) { return self }
-        ensureTmp1Capacity(Int(x.meta.normLen) + 1, .MBI_RESIZE_TMP1_KNUTH_DIVIDEND)
-        let normLen = magia_setDivKnuth64(magia, x.magia, Int(x.meta.normLen), tmp1, yDw)
-        updateMeta(Meta(signFlag: x.meta.signFlag != ySign, normLen: Int32(normLen)))
-        return self
+        // At 64-bit limbs a UInt64 divisor is a single limb — identical to setDivImpl32.
+        return setDivImpl32(x, ySign, yDw)
     }
 
     @discardableResult private func trySetDivFastPath(_ x: BigIntNumber, _ y: BigIntNumber) -> Bool {
@@ -526,15 +501,7 @@ public final class MutableBigInt: BigIntNumber {
         return true
     }
 
-    @discardableResult private func trySetDivFastPath64(_ x: BigIntNumber, _ ySign: Bool, _ yDw: UInt64) -> Bool {
-        let qSignFlag = x.meta.signFlag != ySign
-        let qNormLen = magia_trySetDivFastPath64(magia, x.magia, Int(x.meta.normLen), yDw)
-        if qNormLen < 0 { return false }
-        updateMeta(Meta(signFlag: qSignFlag, normLen: Int32(qNormLen)))
-        return true
-    }
-
-    // MARK: rem (engine: calcRem64/setRem/trySetRemFastPath)
+    // MARK: rem (engine: calcRemLimb/setRem/trySetRemFastPath)
 
     @discardableResult private func trySetRemFastPath(_ x: BigIntNumber, _ y: BigIntNumber) -> Bool {
         let rSignFlag = x.meta.signFlag
@@ -553,9 +520,6 @@ public final class MutableBigInt: BigIntNumber {
     @discardableResult public func setRem(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
         ensureMagiaCapacityCopy(min(Int(x.meta.normLen), Int(y.meta.normLen)))
         if trySetRemFastPath(x, y) { return self }
-        if y.meta.normLen == 2 {
-            return setRemImpl(x, (UInt64(y.magia[1]) << 32) | UInt64(y.magia[0]))
-        }
         ensureTmp1Capacity(Int(x.meta.normLen) + 1, .MBI_RESIZE_TMP1_KNUTH_DIVIDEND)
         ensureTmp2Capacity(Int(y.meta.normLen), .MBI_RESIZE_TMP2_KNUTH_DIVISOR)
         let rNormLen = magia_setRem(magia, x.magia, Int(x.meta.normLen), tmp1, y.magia, Int(y.meta.normLen), tmp2)
@@ -566,8 +530,8 @@ public final class MutableBigInt: BigIntNumber {
 
     @discardableResult private func setRemImpl(_ x: BigIntNumber, _ yDw: UInt64) -> MutableBigInt {
         biStat(.MBI_SET_REM_PRIMITIVE)
-        ensureTmp1Capacity(Int(x.meta.normLen) + 1, .MBI_RESIZE_TMP1_KNUTH_DIVIDEND)
-        let rem = magia_calcRem64(x.magia, Int(x.meta.normLen), tmp1, yDw)
+        // single-limb divisor at 64-bit limbs — no Knuth scratch needed
+        let rem = magia_calcRemLimb(x.magia, Int(x.meta.normLen), yDw)
         return set(x.meta.signFlag, rem)
     }
 
@@ -649,8 +613,8 @@ public final class MutableBigInt: BigIntNumber {
     @discardableResult public func setBit(_ bitIndex: Int) -> MutableBigInt {
         if bitIndex >= 0 {
             biStat(.MBI_SET_BITWISE_OP)
-            let wordIndex = bitIndex >> 5
-            let isolatedBit: Limb = 1 << (bitIndex & 0x1F)
+            let wordIndex = bitIndex >> 6
+            let isolatedBit: Limb = 1 << (bitIndex & 0x3F)
             if wordIndex < Int(meta.normLen) {
                 magia[wordIndex] = magia[wordIndex] | isolatedBit
                 return self
@@ -666,9 +630,9 @@ public final class MutableBigInt: BigIntNumber {
     @discardableResult public func clearBit(_ bitIndex: Int) -> MutableBigInt {
         if bitIndex >= 0 {
             biStat(.MBI_SET_BITWISE_OP)
-            let wordIndex = bitIndex >> 5
+            let wordIndex = bitIndex >> 6
             if wordIndex < Int(meta.normLen) {
-                let isolatedBitMask: Limb = ~(1 << (bitIndex & 0x1F))
+                let isolatedBitMask: Limb = ~(1 << (bitIndex & 0x3F))
                 magia[wordIndex] = magia[wordIndex] & isolatedBitMask
                 updateMeta(Meta(signBit: meta.signBit, normLen: Int32(magia_normLen(magia, Int(meta.normLen)))))
             }
@@ -686,21 +650,21 @@ public final class MutableBigInt: BigIntNumber {
         if bitWidth == 0 || bitIndex >= myBitLen { return setZero() }
         if bitWidth == 1 && !testBit(bitIndex) { return setZero() }
         if bitWidth == 1 {
-            let limbIndex = bitIndex >> 5
+            let limbIndex = bitIndex >> 6
             magia.fill(0, 0, limbIndex)
-            magia[limbIndex] = Limb(1) << (bitIndex & 0x1F)
+            magia[limbIndex] = Limb(1) << (bitIndex & 0x3F)
             updateMeta(Meta(Int32(limbIndex + 1)))
             verify(isNormalized())
             return self
         }
         // more than 1 bit wide and some overlap
         let clampedBitLen = min(bitWidth + bitIndex, myBitLen)
-        let normLen0 = (clampedBitLen + 0x1F) >> 5
-        let nlz = (normLen0 << 5) - clampedBitLen
+        let normLen0 = (clampedBitLen + 0x3F) >> 6
+        let nlz = (normLen0 << 6) - clampedBitLen
         magia[normLen0 - 1] = magia[normLen0 - 1] & (Limb.max >> nlz)
-        let loIndex = bitIndex >> 5
+        let loIndex = bitIndex >> 6
         magia.fill(0, 0, loIndex)
-        let ctz = bitIndex & 0x1F
+        let ctz = bitIndex & 0x3F
         magia[loIndex] = magia[loIndex] & (Limb.max << ctz)
         let normLenV = magia_normLen(magia, normLen0)
         updateMeta(Meta(Int32(normLenV)))
@@ -781,13 +745,11 @@ public final class MutableBigInt: BigIntNumber {
             BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_ADD_SUB_PRIMITIVE.ordinal] -= 1
             return setAdd(self, lo64)
         }
-        let hi64 = unsignedMulHi(dw, dw)
+        let hi64 = unsignedMulHi(dw, dw)        // hi64 != 0 here ⇒ 128-bit = two limbs
         if tmp1.size < 4 { tmp1 = Magia(4) }
-        tmp1[0] = lo64.toLimb()
-        tmp1[1] = (lo64 >> 32).toLimb()
-        tmp1[2] = hi64.toLimb()
-        tmp1[3] = (hi64 >> 32).toLimb()
-        let normLen = magia_normLen(tmp1, 4)
+        tmp1[0] = lo64
+        tmp1[1] = hi64
+        let normLen = magia_normLen(tmp1, 2)
         BigIntStats.BI_OP_COUNTS[StatsOp.MBI_SET_ADD_SUB_BI.ordinal] -= 1
         return setAddImpl(self, Meta(signBit: 0, normLen: Int32(normLen)), tmp1)
     }
@@ -800,20 +762,20 @@ public final class MutableBigInt: BigIntNumber {
         biStat(.MBI_ADD_SQR_BI)
     }
 
-    public func addAbsValueOf(_ n: Int32) { mutAddImpl32(false, UInt32(n.magnitude)) }
+    public func addAbsValueOf(_ n: Int32) { mutAddImpl32(false, UInt64(n.magnitude)) }
     public func addAbsValueOf(_ l: Int64) { mutAddImpl64(false, l.magnitude) }
     public func addAbsValueOf(_ bi: BigIntNumber) { setAddImpl(self, bi.meta.abs(), bi.magia) }
 
     // MARK: compound-assignment operators (mutate the lhs accumulator)
 
-    public static func += (lhs: MutableBigInt, n: Int32) { lhs.mutAddImpl32(n < 0, UInt32(n.magnitude)) }
-    public static func += (lhs: MutableBigInt, w: UInt32) { lhs.mutAddImpl32(false, w) }
+    public static func += (lhs: MutableBigInt, n: Int32) { lhs.mutAddImpl32(n < 0, UInt64(n.magnitude)) }
+    public static func += (lhs: MutableBigInt, w: UInt32) { lhs.mutAddImpl32(false, UInt64(w)) }
     public static func += (lhs: MutableBigInt, l: Int64) { lhs.mutAddImpl64(l < 0, l.magnitude) }
     public static func += (lhs: MutableBigInt, dw: UInt64) { lhs.mutAddImpl64(false, dw) }
     public static func += (lhs: MutableBigInt, bi: BigIntNumber) { lhs.mutAddImpl(bi.meta, bi.magia) }
 
-    public static func -= (lhs: MutableBigInt, n: Int32) { lhs.mutAddImpl32(n > 0, UInt32(n.magnitude)) }
-    public static func -= (lhs: MutableBigInt, w: UInt32) { lhs.mutAddImpl32(true, w) }
+    public static func -= (lhs: MutableBigInt, n: Int32) { lhs.mutAddImpl32(n > 0, UInt64(n.magnitude)) }
+    public static func -= (lhs: MutableBigInt, w: UInt32) { lhs.mutAddImpl32(true, UInt64(w)) }
     public static func -= (lhs: MutableBigInt, l: Int64) { lhs.mutAddImpl64(l > 0, l.magnitude) }
     public static func -= (lhs: MutableBigInt, dw: UInt64) { lhs.mutAddImpl64(true, dw) }
     public static func -= (lhs: MutableBigInt, bi: BigIntNumber) { lhs.mutAddImpl(bi.meta.negate(), bi.magia) }

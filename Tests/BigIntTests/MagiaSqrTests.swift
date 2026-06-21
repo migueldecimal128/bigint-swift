@@ -10,7 +10,7 @@ import Testing
     private func magiaToU128(_ m: Magia, _ n: Int) -> UInt128 {
         var v: UInt128 = 0
         var i = n - 1
-        while i >= 0 { v = (v << 32) | UInt128(m[i]); i -= 1 }
+        while i >= 0 { v = (v << 64) | UInt128(m[i]); i -= 1 }
         return v
     }
 

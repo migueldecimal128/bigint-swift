@@ -16,7 +16,7 @@ import Testing
         let a = Magia(n)
         let golden = Int32(bitPattern: 0x9E37_79B9)
         for i in 0..<n {
-            a[i] = Limb(bitPattern: Int32(truncatingIfNeeded: (i + 1) &* Int(golden)))
+            a[i] = Limb(bitPattern: Int64(truncatingIfNeeded: (i + 1) &* Int(golden)))
         }
         if a[n - 1] == 0 { a[n - 1] = 1 }   // keep normalized
         return a

@@ -8,7 +8,7 @@ import Testing
         let neg = v < 0
         let mag = v.magnitude
         let m = Magia(6)
-        for i in 0..<5 { m[i] = Limb(truncatingIfNeeded: mag >> (i * 32)) }
+        for i in 0..<2 { m[i] = Limb(truncatingIfNeeded: mag >> (i * 64)) }
         return BigInt.fromNonNormalizedOrZero(neg, m)
     }
     private final class Rng {
@@ -22,7 +22,7 @@ import Testing
         }
         func u128(_ bits: Int) -> UInt128 {
             var v: UInt128 = 0
-            for i in 0..<4 { v |= UInt128(Limb(truncatingIfNeeded: next())) << (i * 32) }
+            for i in 0..<2 { v |= UInt128(next()) << (i * 64) }
             if bits < 128 { v &= (UInt128(1) << bits) - 1 }
             return v
         }

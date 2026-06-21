@@ -2,12 +2,12 @@
 //
 // Port of BigIntParsePrint.kt — decimal/hex parse and print. Kotlin `object` →
 // Swift caseless `enum`. ByteArray → [UInt8]; print buffers are mutated via
-// `inout [UInt8]`. All dword math UInt64 + wrapping; engine calls magia_*.
+// `inout [UInt8]`. Decimal chunking stays base 1e9 (9 digits/chunk); the per-limb
+// 1e9 long-division uses DWord (UInt128). Hex uses 16 nybbles per 64-bit limb.
 
 enum BigIntParsePrint {
 
     // MARK: constants
-    private static let BARRETT_MU_1E9: UInt64 = 0x44B8_2FA09        // floor(2^64 / 1e9)
     private static let ONE_E_9: UInt64 = 1_000_000_000
 
     private static let M_U32_DIV_1E1: UInt64 = 0xCCCC_CCCD
@@ -68,7 +68,7 @@ enum BigIntParsePrint {
             var ib = ibMaxx
             var limbsRemaining = tmpLen
             while limbsRemaining > 1 {
-                let newLenAndRemainder = mutateBarrettDivBy1e9(tmp, limbsRemaining)
+                let newLenAndRemainder = mutateDivBy1e9(tmp, limbsRemaining)
                 let chunk = newLenAndRemainder & MASK32
                 render9DigitsBeforeIndex(chunk, &utf8, ib)
                 limbsRemaining = Int(newLenAndRemainder >> 32)
@@ -151,25 +151,24 @@ enum BigIntParsePrint {
         }
     }
 
-    /// In-place Barrett division by 1e9. Returns (newLen<<32) | remainder.
-    static func mutateBarrettDivBy1e9(_ magia: Magia, _ len: Int) -> UInt64 {
+    /// In-place division by 1e9. Returns (newLen<<32) | remainder.
+    ///
+    /// At 64-bit limbs the per-limb partial dividend `combined = rem*2^64 + limb`
+    /// is a 128-bit value (rem < 1e9, so combined < 2^94), divided by 1e9 with
+    /// native UInt128 `/` and `%`. (The old 2^64-reciprocal Barrett trick only
+    /// applied when `combined` fit in 64 bits, i.e. 32-bit limbs.)
+    static func mutateDivBy1e9(_ magia: Magia, _ len: Int) -> UInt64 {
         var rem: UInt64 = 0
         precondition(magia[len - 1] != 0)
+        let divisor = DWord(ONE_E_9)
         var i = len - 1
         while i >= 0 {
-            let limb = UInt64(magia[i])
-            let combined = (rem << 32) | limb
-            var qHat = unsignedMulHi(combined, BARRETT_MU_1E9)
-            var rHat = combined &- qHat &* ONE_E_9
-            // adjustMask = (rHat < 1e9) ? 0 : 0xFFFF...; signed shr propagates the sign bit
-            let adjustMask = ~UInt64(bitPattern: Int64(bitPattern: rHat &- ONE_E_9) >> 63)
-            qHat = qHat &- adjustMask
-            rHat = rHat &- (ONE_E_9 & adjustMask)
-            magia[i] = qHat.toLimb()
-            rem = rHat
+            let combined = (DWord(rem) << 64) | magia[i].toDw()
+            magia[i] = (combined / divisor).toLimb()
+            rem = (combined % divisor).toLimb()
             i -= 1
         }
-        let mostSignificantLimbNonZero = Int((0 &- magia[len - 1]) >> 31)   // 0 or 1
+        let mostSignificantLimbNonZero = magia[len - 1] != 0 ? 1 : 0
         let newLen = len - 1 + mostSignificantLimbNonZero
         return (UInt64(newLen) << 32) | (rem & MASK32)
     }
@@ -213,7 +212,7 @@ enum BigIntParsePrint {
                 } else {
                     w = bi.magia[limbIndex]
                     limbIndex += 1
-                    nybblesRemaining = 8
+                    nybblesRemaining = 16
                 }
             }
             let nybble = Int(w & 0x0F)
@@ -259,7 +258,7 @@ enum BigIntParsePrint {
         if nybbleCount >= 0 {
             if nybbleCount == 0 { mbi.setZero(); return true }
             mbi.updateMeta(Meta(0))
-            let limbLen = (nybbleCount + 7) >> 3
+            let limbLen = (nybbleCount + 15) >> 4
             mbi.ensureMagiaCapacityDiscard(limbLen)
             parseHexHelper(src, nybbleCount, mbi.magia, limbLen)
             mbi.updateMeta(Meta(signFlag: sign, normLen: Int32(limbLen)))
@@ -364,7 +363,7 @@ enum BigIntParsePrint {
         var nybblesLeft = nybbleCount
         for k in 0..<z.size {
             var w = 0
-            let stepCount = min(nybblesLeft, 8)
+            let stepCount = min(nybblesLeft, 16)
             for n in 0..<stepCount {
                 var ch: Character
                 repeat { ch = src.prevChar() } while ch == "_"

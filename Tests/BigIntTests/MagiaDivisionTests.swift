@@ -7,12 +7,12 @@ import Testing
 
 @Suite struct MagiaDivisionTests {
 
-    // up-to-4-limb magia <-> UInt128
+    // up-to-2-limb (128-bit) magia <-> UInt128
     private func magiaU128(_ v: UInt128) -> (Magia, Int) {
         let m = Magia(8)
         var n = 0
-        for i in 0..<4 {
-            let limb = Limb(truncatingIfNeeded: v >> (i * 32))
+        for i in 0..<2 {
+            let limb = Limb(truncatingIfNeeded: v >> (i * 64))
             m[i] = limb
             if limb != 0 { n = i + 1 }
         }
@@ -22,7 +22,7 @@ import Testing
     private func magiaToU128(_ m: Magia, _ n: Int) -> UInt128 {
         var v: UInt128 = 0
         var i = n - 1
-        while i >= 0 { v = (v << 32) | UInt128(m[i]); i -= 1 }
+        while i >= 0 { v = (v << 64) | UInt128(m[i]); i -= 1 }
         return v
     }
 
@@ -88,7 +88,7 @@ import Testing
             var v: UInt128 = 0
             let limbs = Int(next() % UInt64(maxLimbs)) + 1
             for i in 0..<limbs {
-                v |= UInt128(Limb(truncatingIfNeeded: next())) << (i * 32)
+                v |= UInt128(next()) << (i * 64)        // i >= 2 shifts out (UInt128 smart shift → 0)
             }
             return v
         }

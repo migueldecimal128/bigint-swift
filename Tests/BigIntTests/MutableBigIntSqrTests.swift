@@ -28,7 +28,7 @@ import Testing
     private func i128(_ x: BigIntNumber) -> Int128 {
         var mag: UInt128 = 0
         var i = Int(x.meta.normLen) - 1
-        while i >= 0 { mag = (mag << 32) | UInt128(x.magia[i]); i -= 1 }
+        while i >= 0 { mag = (mag << 64) | UInt128(x.magia[i]); i -= 1 }
         let s = Int128(mag)
         return x.isNegative() ? -s : s
     }

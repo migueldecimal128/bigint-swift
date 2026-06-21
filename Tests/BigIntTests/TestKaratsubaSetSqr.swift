@@ -6,7 +6,7 @@ import Testing
     // Builds a Magia from signed limb literals (Kotlin's `intArrayOf` over Int).
     private func mag(_ limbs: [Int32]) -> Magia {
         var a = ContiguousArray<Limb>()
-        for v in limbs { a.append(Limb(bitPattern: v)) }
+        for v in limbs { a.append(Limb(bitPattern: Int64(v))) }
         return Magia(limbs: a)
     }
 

@@ -29,7 +29,7 @@ import Testing
         // 128-bit setter: hi=1, lo=2 -> -(2^64 + 2)
         m.set(true, UInt64(1), UInt64(2))
         #expect(m.isNegative())
-        #expect(m.meta.normLen == 3)               // bitLen 65 -> 3 limbs
+        #expect(m.meta.normLen == 2)               // bitLen 65 -> 2 64-bit limbs
         #expect(m.toULongMagnitude() == 2)         // low 64 bits
         // cross-check against BigInt arithmetic: 2^64 == (2^32)*(2^32)
         let twoTo64 = BigInt.from(UInt64(1) << 32) * BigInt.from(UInt64(1) << 32)
