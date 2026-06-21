@@ -31,10 +31,26 @@ transliteration**, not a rewrite. Keep the call graph and function names 1:1.
 | `dw32(n)` | `dw32(n)` | `Limb → UInt64`, zero-extended |
 | `t.toInt()` (store to limb) | `t.toLimb()` | low 32 bits → `Limb` |
 | `t.toInt()` (sign-mask math) | `t.toInt32()` | low 32 bits → `Int32` |
+| `a + b`, `a - b`, `a * b` (limb math) | `a &+ b`, `a &- b`, `a &* b` | **wrapping** — see policy below |
 | `x ushr n` | `x.ushr(n)` | **LOGICAL** right shift (defined on `Int64`/`Int32`) |
 | `x shr n` | `x >> n` | arithmetic right shift on a signed type |
 | `x shl n` | `x << n` or `x &<< n` | use `&<<` where Kotlin relies on wraparound (e.g. `1 shl 31`) |
 | `-x` where x may be Int.min | `0 &- x` | Kotlin Int negate wraps; Swift `-` traps |
+
+## Overflow policy — WRAPPING OPERATORS UNIFORMLY
+Kotlin/JVM `Long` and `Int` primitives are two's-complement and wrap silently;
+Swift's `+ - *` **trap** on overflow. To be bit-identical to the source AND to
+never trap, map `Long → Int64`, `Int → Int32`, and use the **wrapping operators
+`&+  &-  &*`** for all limb/dword arithmetic — regardless of whether a given
+expression is provably in range.
+
+Why this matters concretely: a limb*limb product is ≤ (2³²−1)² ≈ 2⁶⁴−2³³. That
+fits in 64 *unsigned* bits, but the source accumulates in **signed `Long`**, so
+any product with bit 63 set exceeds `Int64.max` — plain Swift `*` would trap
+where Kotlin wraps. (Computing in `UInt64` would also avoid the trap, but that
+diverges from the source's signed accumulators; we mirror `Long` with `Int64` +
+wrapping instead, keeping the transliteration mechanical.) High words are then
+read with `.ushr(32)` (logical), so the correct bit pattern is preserved.
 | `a.inv()` | `~a` | |
 | `3.inv()` | `~3` | |
 | `dw == 0uL` / `carry == 0L` | `... == 0` | |

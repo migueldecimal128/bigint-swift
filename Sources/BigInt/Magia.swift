@@ -59,6 +59,15 @@ final class Magia {
             s += 1
         }
     }
+
+    /// Kotlin `IntArray.fill(value, fromIndex, toIndex)`.
+    func fill(_ value: Limb, _ fromIndex: Int, _ toIndex: Int) {
+        var i = fromIndex
+        while i < toIndex {
+            a[i] = value
+            i += 1
+        }
+    }
 }
 
 // MARK: - scalar helpers / conversions
@@ -242,7 +251,7 @@ func mutAdd32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
         var carry = w.toDws()
         var i = 0
         while i < xNormLen {
-            let t = x[i].toDws() + carry
+            let t = x[i].toDws() &+ carry
             x[i] = t.toLimb()
             carry = t.ushr(32)
             if carry == 0 { return xNormLen }
@@ -267,9 +276,9 @@ func mutAdd64(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
         var carry = Int64(bitPattern: dw)
         var i = 0
         while i < xNormLen {
-            let t = x[i].toDws() + (carry & MASK32L)
+            let t = x[i].toDws() &+ (carry & MASK32L)
             x[i] = t.toLimb()
-            carry = carry.ushr(32) + t.ushr(32)
+            carry = carry.ushr(32) &+ t.ushr(32)
             if carry == 0 { return xNormLen }
             i += 1
         }
@@ -308,14 +317,14 @@ func mutAdd(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
             var carry: Int64 = 0
             var i = 0
             repeat {
-                let t = x[i].toDws() + y[i].toDws() + carry
+                let t = x[i].toDws() &+ y[i].toDws() &+ carry
                 x[i] = t.toLimb()
                 carry = t.ushr(32)
                 i += 1
             } while i < minNormLen
             if carry == 0 { return maxNormLen }
             while i < maxNormLen {
-                let t = x[i].toDws() + carry
+                let t = x[i].toDws() &+ carry
                 x[i] = t.toLimb()
                 carry = t.ushr(32)
                 if carry == 0 { return maxNormLen }
@@ -342,7 +351,7 @@ func mutSub32(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
         var i = 0
         while i < xNormLen {
             if borrow == 0 { return xNormLen }
-            borrow = x[i].toDws() - borrow
+            borrow = x[i].toDws() &- borrow
             x[i] = borrow.toLimb()
             borrow = borrow.ushr(63)
             i += 1
@@ -365,10 +374,10 @@ func mutSub64(_ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
         var i = 0
         while i < xNormLen {
             if borrow == 0 { return xNormLen }
-            let t = x[i].toDws() - (borrow & MASK32L)
+            let t = x[i].toDws() &- (borrow & MASK32L)
             x[i] = t.toLimb()
             let carryOut = t.ushr(63)        // 1 if borrow-in consumed more than limb
-            borrow = borrow.ushr(32) + carryOut
+            borrow = borrow.ushr(32) &+ carryOut
             i += 1
         }
         if borrow == 0 {
@@ -396,7 +405,7 @@ func mutSub(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
             var borrow: Int64 = 0
             var i = 0
             repeat {
-                let t = x[i].toDws() - y[i].toDws() - borrow
+                let t = x[i].toDws() &- y[i].toDws() &- borrow
                 x[i] = t.toLimb()
                 borrow = t.ushr(63)
                 i += 1
@@ -415,7 +424,7 @@ func mutSub(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
                 return zNormLen
             }
             while i < xNormLen {
-                let t = x[i].toDws() - borrow
+                let t = x[i].toDws() &- borrow
                 x[i] = t.toLimb()
                 borrow = t.ushr(63)
                 if borrow == 0 {
@@ -444,7 +453,7 @@ func setSub(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int
                 var lastNonZeroIndex = -1
                 var i = 0
                 while i < yNormLen {
-                    let t = x[i].toDws() - y[i].toDws() - borrow
+                    let t = x[i].toDws() &- y[i].toDws() &- borrow
                     let zi = t.toInt32()
                     z[i] = Limb(bitPattern: zi)
                     let nonZeroMask = Int((zi | (0 &- zi)) >> 31)
@@ -453,7 +462,7 @@ func setSub(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int
                     i += 1
                 }
                 while i < xNormLen {
-                    let t = x[i].toDws() - borrow
+                    let t = x[i].toDws() &- borrow
                     let zi = t.toInt32()
                     z[i] = Limb(bitPattern: zi)
                     let nonZeroMask = Int((zi | (0 &- zi)) >> 31)
@@ -473,13 +482,314 @@ func setSub(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int
     throwBoundsCheckViolation()
 }
 
+// MARK: - mul
+//
+// NOTE: these multiply two zero-extended limb values in Int64; the product
+// reaches 2^64 and overflows signed Int64. Kotlin's `Long` arithmetic wraps;
+// Swift `*`/`+` trap. So the multiply-accumulate paths use the WRAPPING
+// operators `&*` / `&+` (logical `.ushr(32)` then reads the true high word).
+
+/// `z = x * w`; safe in place (z may === x). Returns normalized length.
+func setMul32(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
+    if xNormLen >= 0 && xNormLen <= x.size {
+        verify(isNormalized(x, xNormLen))
+        if xNormLen > 0 && w.nonzeroBitCount > 1 {
+            let dws = Int64(w)
+            var carry: Int64 = 0
+            var i = 0
+            while i < xNormLen {
+                let t = x[i].toDws() &* dws &+ carry
+                z[i] = t.toLimb()
+                carry = t.ushr(32)
+                i += 1
+            }
+            if carry != 0 {
+                if i >= z.size { throwMulOverflow() }
+                z[i] = carry.toLimb()
+                i += 1
+            }
+            verify(isNormalized(z, i))
+            return i
+        }
+        if xNormLen == 0 || w == 0 { return 0 }
+        return setShiftLeft(z, x, xNormLen, Int(w.trailingZeroBitCount))
+    }
+    throwBoundsCheckViolation()
+}
+
+/// `z = x * dw`; does not overwrite x. Returns normalized length.
+func setMul64(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ dw: UInt64) -> Int {
+    if (dw >> 32) == 0 {
+        return setMul32(z, x, xNormLen, Limb(truncatingIfNeeded: dw))
+    }
+    if xNormLen >= 0 && xNormLen <= x.size {
+        verify(isNormalized(x, xNormLen))
+        if xNormLen > 0 && dw.nonzeroBitCount > 1 {
+            let dws = Int64(bitPattern: dw)
+            let lo = dws & MASK32L
+            let hi = dws.ushr(32)
+
+            var ppPrevHi: Int64 = 0
+
+            var i = 0
+            while i < xNormLen {
+                let xi = x[i].toDws()
+
+                let pp = xi &* lo &+ (ppPrevHi & MASK32L)
+                z[i] = pp.toLimb()
+
+                ppPrevHi = xi &* hi &+ ppPrevHi.ushr(32) &+ pp.ushr(32)
+                i += 1
+            }
+            if ppPrevHi != 0 && i < z.size {
+                z[i] = ppPrevHi.toLimb()
+                ppPrevHi = ppPrevHi.ushr(32)
+                i += 1
+                if ppPrevHi != 0 && i < z.size {
+                    z[i] = ppPrevHi.toLimb()
+                    ppPrevHi = ppPrevHi.ushr(32)
+                    i += 1
+                }
+            }
+            if ppPrevHi == 0 {
+                verify(isNormalized(z, i))
+                return i
+            }
+            throwMulOverflow()
+        }
+        if xNormLen == 0 { return 0 }
+        verify(dw.nonzeroBitCount == 1)
+        return setShiftLeft(z, x, xNormLen, Int(dw.trailingZeroBitCount))
+    }
+    throwBoundsCheckViolation()
+}
+
+func setMul(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+    setMulSchoolbook(z, x, xNormLen, y, yNormLen)
+}
+
+func setMulSchoolbook(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
+    verify(z !== x && z !== y)
+    if xNormLen >= 0 && xNormLen <= x.size &&
+        yNormLen >= 0 && yNormLen <= y.size &&
+        z.size >= xNormLen + yNormLen - 1
+    {
+        if xNormLen == 0 || yNormLen == 0 { return 0 }
+
+        let corto = xNormLen < yNormLen ? x : y
+        let largo = xNormLen < yNormLen ? y : x
+        let cortoLen = xNormLen < yNormLen ? xNormLen : yNormLen
+        let largoLen = xNormLen < yNormLen ? yNormLen : xNormLen
+
+        // zero out the minimum amount needed; higher limbs written before read
+        z.fill(0, 0, largoLen)
+        for i in 0..<cortoLen {
+            let cortoLimb = corto[i].toDws()
+            var carry: Int64 = 0
+            for j in 0..<largoLen {
+                let largoLimb = largo[j].toDws()
+                carry = carry &+ cortoLimb &* largoLimb &+ z[i + j].toDws()
+                z[i + j] = carry.toLimb()
+                carry = carry.ushr(32)
+            }
+            if i + largoLen < z.size {
+                z[i + largoLen] = carry.toLimb()
+            } else if carry != 0 {
+                throwMulOverflow()
+            }
+        }
+        var lastIndex = cortoLen + largoLen - 1
+        // >= instead of == to help bounds check elimination
+        if lastIndex >= z.size || z[lastIndex] == 0 { lastIndex -= 1 }
+        let zNormLen = lastIndex + 1
+        verify(isNormalized(z, zNormLen))
+        return zNormLen
+    }
+    throwBoundsCheckViolation()
+}
+
+/// Powers of 10 from 10⁰ through 10⁹, for fast small-power decimal scaling.
+private let POW10: [Int64] = [
+    1, 10, 100, 1000, 10000, 100000, 1000000,
+    10000000, 100000000, 1000000000
+]
+
+/// In-place fused multiply-add: `x = x * 10^pow10 + a`, pow10 in 0..9.
+func mutateFmaPow10(_ x: Magia, _ xLen: Int, _ pow10: Int, _ a: Limb) {
+    if pow10 >= 0 && pow10 <= 9 {
+        let m64 = POW10[pow10]
+        var carry = Int64(a)
+        for i in 0..<xLen {
+            carry = carry &+ x[i].toDws() &* m64
+            x[i] = carry.toLimb()
+            carry = carry.ushr(32)
+        }
+    } else {
+        fatalError() // IllegalArgumentException
+    }
+}
+
+// MARK: - shifts
+
+/// `z = x >> bitCount`; safe in place (z may === x). Returns normalized length.
+func setShiftRight(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ bitCount: Int) -> Int {
+    precondition(bitCount >= 0 && xNormLen >= 0 && xNormLen <= x.size)
+    verify(isNormalized(x, xNormLen))
+    if xNormLen == 0 { return 0 }
+    precondition(x[xNormLen - 1] != 0)
+    let newBitLen = normBitLen(x, xNormLen) - bitCount
+    if newBitLen <= 0 { return 0 }
+    let zNormLen = (newBitLen + 0x1F) >> 5
+    precondition(zNormLen <= z.size)
+    let wordShift = bitCount >> 5
+    let innerShift = bitCount & ((1 << 5) - 1)
+    if innerShift != 0 {
+        let iLast = zNormLen - 1
+        for i in 0..<iLast {
+            z[i] = (x[i + wordShift + 1] << (32 - innerShift)) | (x[i + wordShift] >> innerShift)
+        }
+        let srcIndex = iLast + wordShift + 1
+        z[iLast] = (
+            srcIndex < xNormLen
+                ? (x[iLast + wordShift + 1] << (32 - innerShift))
+                : 0
+        ) | (x[iLast + wordShift] >> innerShift)
+    } else {
+        for i in 0..<zNormLen {
+            z[i] = x[i + wordShift]
+        }
+    }
+    verify(isNormalized(z, zNormLen))
+    return zNormLen
+}
+
+/// `z = x << bitCount`; safe in place (z may === x). Returns normalized length.
+func setShiftLeft(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ bitCount: Int) -> Int {
+    verify(isNormalized(x, xNormLen))
+
+    if xNormLen == 0 { return 0 }
+
+    let xBitLen = normBitLen(x, xNormLen)
+
+    let wordShift = bitCount >> 5
+    let innerShift = bitCount & 31
+
+    let zBitLen = xBitLen + bitCount
+    let zNormLen = limbLenFromBitLen(zBitLen)
+
+    if zNormLen > z.size { throwShlOverflow() }
+
+    // Fast path: whole-limb shift only
+    if innerShift == 0 {
+        x.copyInto(z, wordShift, 0, xNormLen)
+        z.fill(0, 0, wordShift)
+
+        precondition(isNormalized(z, zNormLen))
+        return zNormLen
+    }
+
+    // Non-zero inner shift: detect spill from top limb
+    let top = x[xNormLen - 1]
+    let spill = top >> (32 - innerShift)   // 0 if no spill
+
+    // Write spill limb FIRST (important if z === x)
+    if spill != 0 {
+        z[zNormLen - 1] = spill
+    }
+
+    // Main shift loop: high → low (in-place safe)
+    for src in stride(from: xNormLen - 1, through: 1, by: -1) {
+        let dst = src + wordShift
+        z[dst] = (x[src] << innerShift) | (x[src - 1] >> (32 - innerShift))
+    }
+
+    // lowest shifted limb
+    z[wordShift] = x[0] << innerShift
+
+    // clear lower limbs
+    z.fill(0, 0, wordShift)
+
+    verify(isNormalized(z, zNormLen))
+    return zNormLen
+}
+
+// MARK: - bit queries
+
+func isPowerOfTwo(_ x: Magia, _ xNormLen: Int) -> Bool {
+    verify(isNormalized(x, xNormLen))
+    if xNormLen >= 0 && xNormLen <= x.size {
+        var bitSeen = false
+        for i in 0..<xNormLen {
+            let w = x[i]
+            if w != 0 {
+                if bitSeen || (w & (w - 1)) != 0 { return false }
+                bitSeen = true
+            }
+        }
+        return bitSeen
+    }
+    throwBoundsCheckViolation()
+}
+
+func bitLen(_ x: Magia) -> Int { bitLen(x, x.size) }
+
+func bitLen(_ x: Magia, _ xLen: Int) -> Int {
+    if xLen >= 0 && xLen <= x.size {
+        var i = xLen - 1
+        while i >= 0 {
+            if x[i] != 0 {
+                return 32 - Int(x[i].leadingZeroBitCount) + (i * 32)
+            }
+            i -= 1
+        }
+        return 0
+    }
+    throwBoundsCheckViolation()
+}
+
+func normBitLen(_ x: Magia, _ xLen: Int) -> Int {
+    if xLen > 0 {
+        let lastLimb = x[xLen - 1]
+        verify(lastLimb != 0)
+        return (xLen << 5) - Int(lastLimb.leadingZeroBitCount)
+    }
+    return 0
+}
+
+@inline(__always) func nonZeroNormBitLen(_ x: Magia, _ xLen: Int) -> Int {
+    let lastLimb = x[xLen - 1]
+    verify(lastLimb != 0)
+    return (xLen << 5) - Int(lastLimb.leadingZeroBitCount)
+}
+
+/// Bit length using Java BigInteger semantics (two's-complement, minus sign bit).
+func bitLengthBigIntegerStyle(_ sign: Bool, _ x: Magia, _ xNormLen: Int) -> Int {
+    verify(isNormalized(x, xNormLen))
+    if xNormLen >= 0 && xNormLen <= x.size {
+        let bitLen = normBitLen(x, xNormLen)
+        let isNegPowerOfTwo = sign && isPowerOfTwo(x, xNormLen)
+        return bitLen - (isNegPowerOfTwo ? 1 : 0)
+    }
+    throwBoundsCheckViolation()
+}
+
+/// Count of trailing zero bits in the magnitude; -1 if zero.
+func ctz(_ x: Magia, _ normLen: Int) -> Int {
+    if normLen >= 0 && normLen <= x.size {
+        for i in 0..<normLen {
+            if x[i] != 0 {
+                return (i << 5) + Int(x[i].trailingZeroBitCount)
+            }
+        }
+        return -1
+    }
+    throwBoundsCheckViolation()
+}
+
 // ============================================================================
-// PHASE 1 REMAINING (port in source order from Magia.kt; ~50 funcs):
-//   setMul32/64, setMul, setMulSchoolbook, mutateFmaPow10,
-//   setShiftRight/Left, isPowerOfTwo, bitLen(Magia)×2, normBitLen,
-//   nonZeroNormBitLen, bitLengthBigIntegerStyle, ctz,
+// PHASE 1 REMAINING (port in source order from Magia.kt):
 //   setAnd/setOr/setXor, testBit, testAnyBitInLowerN, extractULongAtBitIndex,
 //   EQ×2, compare×2, setDiv32, setDivKnuth64, trySetDivFastPath(64),
 //   calcRem32/64, setDivKnuth, setRem64, setRem, trySetRemFastPath, …
-// Then MagiaSqr.kt.
+//   (Magia.kt lines 1138-2075). Then MagiaSqr.kt.
 // ============================================================================
