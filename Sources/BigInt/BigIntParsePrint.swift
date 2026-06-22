@@ -4,7 +4,7 @@
 // Swift caseless `enum`. ByteArray → [UInt8]; print buffers are mutated via
 // `inout [UInt8]`. Both decimal PARSE and PRINT chunk base 1e19 (19 digits/chunk
 // — the most that fit a 64-bit limb); the per-limb print division by 1e19 uses
-// the Granlund-Montgomery reciprocal-multiply (udiv1e19_recipMul, no real
+// the Granlund-Montgomery reciprocal-multiply (udivRecipMul, no real
 // divide). Hex uses 16 nybbles per 64-bit limb.
 
 // ASCII byte codes for the byte-oriented parser (Latin1Iterator returns Int).
@@ -186,7 +186,7 @@ enum BigIntParsePrint {
     /// -- far cheaper than an emulated 128/64 divide on arm64.
     /// Differential-tested against `UInt64.dividingFullWidth` (see TestUdivPreinv).
     @inline(__always)
-    static func udiv1e19_recipMul(_ u1: UInt64, _ u0: UInt64, _ d: UInt64, _ v: UInt64) -> (q: UInt64, r: UInt64) {
+    static func udivRecipMul(_ u1: UInt64, _ u0: UInt64, _ d: UInt64, _ v: UInt64) -> (q: UInt64, r: UInt64) {
         var (qh, ql) = u1.multipliedFullWidth(by: v)          // (qh:ql) = u1 * v
         let (sumLo, carry) = ql.addingReportingOverflow(u0)   // (qh:ql) += (u1:u0)
         ql = sumLo
@@ -204,7 +204,7 @@ enum BigIntParsePrint {
     /// rather than the old `(newLen<<32)|rem32` packing of the base-1e9 version).
     ///
     /// Each per-limb 2-by-1 step `(high: rem, low: limb) / 1e19` (rem < 1e19) uses
-    /// the Granlund-Montgomery reciprocal-multiply (`udiv1e19_recipMul`) instead of a
+    /// the Granlund-Montgomery reciprocal-multiply (`udivRecipMul`) instead of a
     /// hardware/emulated divide. Base 1e19 (largest power of ten in a 64-bit limb)
     /// also halves the divide passes vs base 1e9.
     static func mutateDivBy1e19(_ magia: Magia, _ len: Int) -> (newLen: Int, rem: UInt64) {
@@ -213,7 +213,7 @@ enum BigIntParsePrint {
         let d = ONE_E_19, v = RECIP_1E19
         var i = len - 1
         while i >= 0 {
-            let (q, r) = udiv1e19_recipMul(rem, magia[i], d, v)
+            let (q, r) = udivRecipMul(rem, magia[i], d, v)
             magia[i] = q
             rem = r
             i -= 1

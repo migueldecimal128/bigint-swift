@@ -2,7 +2,7 @@ import Testing
 @testable import BigInt
 
 /// Differential test: the Granlund-Montgomery 2-by-1 reciprocal divide
-/// (`udiv1e19_recipMul`, used by the base-1e19 print path) must match the stdlib's
+/// (`udivRecipMul`, used by the base-1e19 print path) must match the stdlib's
 /// `UInt64.dividingFullWidth` for every `(high < d, low)` dividend.
 @Suite struct TestUdivPreinv {
 
@@ -11,7 +11,7 @@ import Testing
     }
 
     private func check(_ d: UInt64, _ u1: UInt64, _ u0: UInt64, _ v: UInt64) {
-        let got = BigIntParsePrint.udiv1e19_recipMul(u1, u0, d, v)
+        let got = BigIntParsePrint.udivRecipMul(u1, u0, d, v)
         let ref = d.dividingFullWidth((high: u1, low: u0))   // requires u1 < d
         #expect(got.q == ref.quotient && got.r == ref.remainder,
                 "d=\(d) u1=\(u1) u0=\(u0): got (\(got.q),\(got.r)) want (\(ref.quotient),\(ref.remainder))")
