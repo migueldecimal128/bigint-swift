@@ -772,6 +772,31 @@ extension BigInt: ExpressibleByIntegerLiteral {
     }
 }
 
+// AdditiveArithmetic: + / - and Equatable are already provided; `zero` aliases the
+// port-faithful `ZERO` constant (kept uppercase to mirror bigint-kotlin).
+extension BigInt: AdditiveArithmetic {
+    public static var zero: BigInt { ZERO }
+}
+
+// Numeric: refines AdditiveArithmetic + ExpressibleByIntegerLiteral (both done);
+// `*` / `*=` are already provided. Magnitude is BigInt itself (no separate unsigned
+// type). `init?(exactly:)` never fails for arbitrary precision — every BinaryInteger
+// is representable; wide sources rebuild from the magnitude's little-endian words
+// (UInt == Limb on the 64-bit-only target).
+extension BigInt: Numeric {
+    public typealias Magnitude = BigInt
+    public var magnitude: BigInt { absoluteValue }
+
+    public init?<T: BinaryInteger>(exactly source: T) {
+        if let i = Int64(exactly: source) { self = BigInt.from(i); return }
+        if let u = UInt64(exactly: source) { self = BigInt.from(u); return }
+        let limbs = source.magnitude.words.map { Limb($0) }
+        self = BigInt.fromLittleEndianIntArray(source < 0, Array(limbs))
+    }
+
+    public static func *= (lhs: inout BigInt, rhs: BigInt) { lhs = lhs * rhs }
+}
+
 // ============================================================================
 // DEFERRED from BigInt.kt: from(CharSequence/CharArray/ByteArray) parse
 // overloads (minor; String done). from(Double)/fromULongShiftLeft, the random
