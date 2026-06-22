@@ -1,5 +1,6 @@
 import Testing
 @testable import BigInt
+@testable import BigIntMath
 
 // PORT-NOTE: This Kotlin file is mostly a benchmark. Per the work order, only
 // the correctness assertions are ported; all timing (`measureNano`), warmup

@@ -10,6 +10,8 @@
 // expressed here via `.compareTo(...)`. The reference-identity guard
 // `n !== tmp` becomes `(n as? MutableBigInt) !== tmp`.
 
+import BigInt
+
 public enum BigIntPrime {
 
     public static func nextProbablePrime(_ n: BigIntNumber) -> BigInt {
@@ -354,4 +356,11 @@ public enum BigIntPrime {
         // x is already reduced mod n
         return x.isOdd() ? (x + n).shr(1) : x.shr(1)
     }
+}
+
+extension BigIntNumber {
+    /// Baillie–PSW probable-prime test.
+    public func isProbablePrime() -> Bool { BigIntPrime.isProbablePrime(self) }
+    /// Smallest probable prime strictly greater than `self`.
+    public func nextProbablePrime() -> BigInt { BigIntPrime.nextProbablePrime(self) }
 }

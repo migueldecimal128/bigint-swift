@@ -1,5 +1,6 @@
 import Testing
 @testable import BigInt
+@testable import BigIntMath
 
 @Suite struct TestModInv {
 

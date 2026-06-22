@@ -252,16 +252,8 @@ extension BigIntNumber {
     /// Hex string, `0x`-prefixed, uppercase (negatives prefixed with `-`).
     public func toHexString() -> String { BigIntParsePrint.toHexString(self) }
 
-    // MARK: algorithms (Phase 3 BigIntAlgorithms)
-
-    /// Integer square root: largest r with r*r ≤ self < (r+1)^2.
-    public func isqrt() -> BigInt { BigIntAlgorithms.isqrt(self) }
-    public func isPerfectSquare() -> Bool { BigIntAlgorithms.isPerfectSquare(self) }
-
-    // MARK: primality (Phase 4 BigIntPrime)
-
-    public func isProbablePrime() -> Bool { BigIntPrime.isProbablePrime(self) }
-    public func nextProbablePrime() -> BigInt { BigIntPrime.nextProbablePrime(self) }
+    // isqrt() / isPerfectSquare() / isProbablePrime() / nextProbablePrime() live
+    // in the BigIntMath module (extensions on BigIntNumber). Import BigIntMath.
 
     // MARK: serde (Phase 3 BigIntSerde)
 

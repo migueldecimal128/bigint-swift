@@ -14,6 +14,12 @@ let package = Package(
             name: "BigInt",
             targets: ["BigInt"]
         ),
+        // Modular arithmetic, primality, and number-theory helpers. Separately
+        // distributable; depends on the core BigInt product.
+        .library(
+            name: "BigIntMath",
+            targets: ["BigIntMath"]
+        ),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -21,9 +27,17 @@ let package = Package(
         .target(
             name: "BigInt"
         ),
+        .target(
+            name: "BigIntMath",
+            dependencies: ["BigInt"]
+        ),
         .testTarget(
             name: "BigIntTests",
             dependencies: ["BigInt"]
+        ),
+        .testTarget(
+            name: "BigIntMathTests",
+            dependencies: ["BigIntMath", "BigInt"]
         ),
     ],
     swiftLanguageModes: [.v6]

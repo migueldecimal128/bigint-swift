@@ -5,6 +5,8 @@
 // modPow) for odd moduli. Comparisons that Kotlin writes as `>=`/`<` on
 // MutableBigInt are expressed here via `.compareTo(...)`.
 
+import BigInt
+
 public final class ModContext {
     public let m: BigInt
     let kBits: Int
@@ -131,7 +133,7 @@ public final class ModContext {
         }
 
         static func calcMu(_ m: BigInt) -> BigInt {
-            BigInt.withSetBit(2 * Int(m.meta.normLen) * 64) / m
+            BigInt.withSetBit(2 * ((m.magnitudeBitLen() + 63) >> 6) * 64) / m
         }
 
         func reduceInto(_ x: MutableBigInt, _ out: MutableBigInt) {
@@ -246,8 +248,8 @@ public final class ModContext {
         init(_ modulus: BigInt) {
             precondition(modulus.compareTo(Int32(1)) >= 0 && modulus.isOdd())
             self.modulus = modulus
-            self.k = Int(modulus.meta.normLen)
-            self.np = Montgomery.computeNp(modulus.magia[0])
+            self.k = (modulus.magnitudeBitLen() + 63) >> 6
+            self.np = Montgomery.computeNp(modulus.toULongMagnitude())
             // r2 = R^2 mod m, R = 2^(64·k); R^2 = 2^(2·64·k) = 2^(128·k)
             self.r2 = BigInt.withSetBit(128 * k) % modulus
             self.precomputedPowers = (0..<(1 << 6)).map { _ in MutableBigInt() }

@@ -283,9 +283,8 @@ public struct BigInt: BigIntNumber, Comparable {
         return fromNormalizedNonZero(magia)
     }
 
-    public static func factorial(_ n: Int) -> BigInt { BigIntAlgorithms.factorial(n) }
-    public static func gcd(_ a: BigInt, _ b: BigInt) -> BigInt { BigIntAlgorithms.gcd(a, b) }
-    public static func lcm(_ a: BigInt, _ b: BigInt) -> BigInt { BigIntAlgorithms.lcm(a, b) }
+    // factorial(_:) / gcd(_:_:) / lcm(_:_:) live in the BigIntMath module
+    // (extensions on BigInt). Import BigIntMath to use them.
 
     // MARK: bit operations (magnitude-only; non-negative results)
 
