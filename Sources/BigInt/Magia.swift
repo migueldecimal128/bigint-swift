@@ -258,18 +258,18 @@ func magia_newCopyWithExactLimbLen(_ x: Magia, _ xLen: Int, _ exactLimbLen: Int)
 func magia_mutAddLimb(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size {
         if w == 0 { return xNormLen }
-        var carry = w.toDw()
+        var carry: Limb = w
         var i = 0
         while i < xNormLen {
-            let t = x[i].toDw() &+ carry
-            x[i] = t.toLimb()
-            carry = t >> 64
+            let (s, c) = x[i].addingReportingOverflow(carry)
+            x[i] = s
+            carry = c ? 1 : 0
             if carry == 0 { return xNormLen }
             i += 1
         }
         if i < x.size {
             verify(carry != 0)
-            x[i] = carry.toLimb()
+            x[i] = carry
             i += 1
             verify(magia_isNormalized(x, i))
             return i
@@ -291,19 +291,20 @@ func magia_mutAdd(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> I
                 y.copyInto(x, xNormLen, xNormLen, yNormLen)
             }
             let minNormLen = min(xNormLen, yNormLen)
-            var carry: DWord = 0
+            var carry: Limb = 0
             var i = 0
             repeat {
-                let t = x[i].toDw() &+ y[i].toDw() &+ carry
-                x[i] = t.toLimb()
-                carry = t >> 64
+                let (s0, c0) = x[i].addingReportingOverflow(y[i])
+                let (s1, c1) = s0.addingReportingOverflow(carry)
+                x[i] = s1
+                carry = (c0 ? 1 : 0) &+ (c1 ? 1 : 0)
                 i += 1
             } while i < minNormLen
             if carry == 0 { return maxNormLen }
             while i < maxNormLen {
-                let t = x[i].toDw() &+ carry
-                x[i] = t.toLimb()
-                carry = t >> 64
+                let (s, c) = x[i].addingReportingOverflow(carry)
+                x[i] = s
+                carry = c ? 1 : 0
                 if carry == 0 { return maxNormLen }
                 i += 1
             }
@@ -324,13 +325,13 @@ func magia_mutAdd(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> I
 /// `x -= w` in place (requires x ≥ w); returns new normalized length.
 func magia_mutSubLimb(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size {
-        var borrow = w.toDw()
+        var borrow: Limb = w
         var i = 0
         while i < xNormLen {
             if borrow == 0 { return xNormLen }
-            borrow = x[i].toDw() &- borrow
-            x[i] = borrow.toLimb()
-            borrow = borrow >> 127
+            let (d, b) = x[i].subtractingReportingOverflow(borrow)
+            x[i] = d
+            borrow = b ? 1 : 0
             i += 1
         }
         if borrow == 0 {
@@ -350,12 +351,13 @@ func magia_mutSub(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> I
     verify(magia_isNormalized(y, yNormLen))
     if xNormLen > 0 && xNormLen <= x.size && yNormLen > 0 && yNormLen <= y.size {
         if xNormLen >= yNormLen {
-            var borrow: DWord = 0
+            var borrow: Limb = 0
             var i = 0
             repeat {
-                let t = x[i].toDw() &- y[i].toDw() &- borrow
-                x[i] = t.toLimb()
-                borrow = t >> 127
+                let (d0, b0) = x[i].subtractingReportingOverflow(y[i])
+                let (d1, b1) = d0.subtractingReportingOverflow(borrow)
+                x[i] = d1
+                borrow = (b0 ? 1 : 0) &+ (b1 ? 1 : 0)
                 i += 1
             } while i < yNormLen
             if borrow == 0 {
@@ -372,9 +374,9 @@ func magia_mutSub(_ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> I
                 return zNormLen
             }
             while i < xNormLen {
-                let t = x[i].toDw() &- borrow
-                x[i] = t.toLimb()
-                borrow = t >> 127
+                let (d, b) = x[i].subtractingReportingOverflow(borrow)
+                x[i] = d
+                borrow = b ? 1 : 0
                 if borrow == 0 {
                     // a full 2^64 underflow at an inner limb can zero several top
                     // limbs at once, so trim all trailing zeros (not just one)
@@ -400,25 +402,26 @@ func magia_setSub(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLe
         verify(magia_isNormalized(y, yNormLen))
         if z.size >= xNormLen {
             if xNormLen >= yNormLen {
-                var borrow: DWord = 0
+                var borrow: Limb = 0
                 var lastNonZeroIndex = -1
                 var i = 0
                 while i < yNormLen {
-                    let t = x[i].toDw() &- y[i].toDw() &- borrow
-                    let zi = t.toInt64()
-                    z[i] = Limb(bitPattern: zi)
+                    let (d0, b0) = x[i].subtractingReportingOverflow(y[i])
+                    let (d1, b1) = d0.subtractingReportingOverflow(borrow)
+                    z[i] = d1
+                    let zi = Int64(bitPattern: d1)
                     let nonZeroMask = Int((zi | (0 &- zi)) >> 63)
                     lastNonZeroIndex = (lastNonZeroIndex & ~nonZeroMask) | (i & nonZeroMask)
-                    borrow = t >> 127
+                    borrow = (b0 ? 1 : 0) &+ (b1 ? 1 : 0)
                     i += 1
                 }
                 while i < xNormLen {
-                    let t = x[i].toDw() &- borrow
-                    let zi = t.toInt64()
-                    z[i] = Limb(bitPattern: zi)
+                    let (d, b) = x[i].subtractingReportingOverflow(borrow)
+                    z[i] = d
+                    let zi = Int64(bitPattern: d)
                     let nonZeroMask = Int((zi | (0 &- zi)) >> 63)
                     lastNonZeroIndex = (lastNonZeroIndex & ~nonZeroMask) | (i & nonZeroMask)
-                    borrow = t >> 127
+                    borrow = b ? 1 : 0
                     i += 1
                 }
                 if borrow == 0 {
@@ -435,29 +438,29 @@ func magia_setSub(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLe
 
 // MARK: - mul
 //
-// NOTE: dwords are DWord (UInt128). A limb*limb product is ≤ (2^64-1)^2 and the
-// schoolbook accumulator (product + carry + addend) stays ≤ 2^128-1, so no
-// overflow occurs. WRAPPING operators `&*` / `&+` are used per the uniform
-// policy (mirror Kotlin two's-complement, never trap); `>> 64` reads the high
-// word (logical on UInt128).
+// NOTE: limb products use `multipliedFullWidth(by:)` → (high, low) UInt64 pair,
+// and the running carry is a single `Limb` (the product's high word). A limb*limb
+// product is ≤ (2^64-1)^2, so the full accumulator (product + carry + addend)
+// stays ≤ 2^128-1 and the next carry `hi &+ (addCarryBits)` never overflows a
+// UInt64 — the wrapping `&+` is provably non-wrapping here.
 
 /// `z = x * w`; safe in place (z may === x). Returns normalized length.
 func magia_setMulLimb(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int {
     if xNormLen >= 0 && xNormLen <= x.size {
         verify(magia_isNormalized(x, xNormLen))
         if xNormLen > 0 && w.nonzeroBitCount > 1 {
-            let dws = w.toDw()
-            var carry: DWord = 0
+            var carry: Limb = 0
             var i = 0
             while i < xNormLen {
-                let t = x[i].toDw() &* dws &+ carry
-                z[i] = t.toLimb()
-                carry = t >> 64
+                let (hi, lo) = x[i].multipliedFullWidth(by: w)
+                let (s, c) = lo.addingReportingOverflow(carry)
+                z[i] = s
+                carry = hi &+ (c ? 1 : 0)
                 i += 1
             }
             if carry != 0 {
                 if i >= z.size { throwMulOverflow() }
-                z[i] = carry.toLimb()
+                z[i] = carry
                 i += 1
             }
             verify(magia_isNormalized(z, i))
@@ -489,16 +492,17 @@ func magia_setMulSchoolbook(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia,
         // zero out the minimum amount needed; higher limbs written before read
         z.fill(0, 0, largoLen)
         for i in 0..<cortoLen {
-            let cortoLimb = corto[i].toDw()
-            var carry: DWord = 0
+            let cortoLimb = corto[i]
+            var carry: Limb = 0
             for j in 0..<largoLen {
-                let largoLimb = largo[j].toDw()
-                carry = carry &+ cortoLimb &* largoLimb &+ z[i + j].toDw()
-                z[i + j] = carry.toLimb()
-                carry = carry >> 64
+                let (hi, lo) = cortoLimb.multipliedFullWidth(by: largo[j])
+                let (s0, c0) = lo.addingReportingOverflow(carry)
+                let (s1, c1) = s0.addingReportingOverflow(z[i + j])
+                z[i + j] = s1
+                carry = hi &+ (c0 ? 1 : 0) &+ (c1 ? 1 : 0)
             }
             if i + largoLen < z.size {
-                z[i + largoLen] = carry.toLimb()
+                z[i + largoLen] = carry
             } else if carry != 0 {
                 throwMulOverflow()
             }
@@ -522,12 +526,13 @@ private let POW10: [UInt64] = [
 /// In-place fused multiply-add: `x = x * 10^pow10 + a`, pow10 in 0..9.
 func magia_mutateFmaPow10(_ x: Magia, _ xLen: Int, _ pow10: Int, _ a: Limb) {
     if pow10 >= 0 && pow10 <= 9 {
-        let m64 = DWord(POW10[pow10])
-        var carry = DWord(a)
+        let m = POW10[pow10]
+        var carry: Limb = a
         for i in 0..<xLen {
-            carry = carry &+ x[i].toDw() &* m64
-            x[i] = carry.toLimb()
-            carry = carry >> 64
+            let (hi, lo) = x[i].multipliedFullWidth(by: m)
+            let (s, c) = lo.addingReportingOverflow(carry)
+            x[i] = s
+            carry = hi &+ (c ? 1 : 0)
         }
     } else {
         fatalError() // IllegalArgumentException

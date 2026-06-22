@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MIT
 //
-// Port of MagiaSqr.kt — squaring kernels (schoolbook, Karatsuba). All dword math
-// is DWord (UInt128) with wrapping operators per policy. The only borrow
-// (kmutSub) uses the DWord wrapped-borrow `>> 127` (sign-bit) pattern.
+// Port of MagiaSqr.kt — squaring kernels (schoolbook, Karatsuba). Limb products
+// use `multipliedFullWidth(by:)` → (high, low) UInt64, and carries/borrows are
+// single-bit `Limb`s threaded via addingReportingOverflow/subtractingReportingOverflow
+// (likewise the Karatsuba add/sub helpers ksetAdd/kmutSub/kmutAddShifted). The
+// cross-term doubling step (z = z·2) is a native single-bit-carry left shift.
 //
 // 64-bit limb note (BigIntSwift64BitLimbWorkOrder.md §4 Phase 4): the
 // hand-unrolled setSqr2/3/4Limbs were bit-for-bit derived for 32-bit limbs and
 // are dropped here (de-risk option); those sizes fall back to the general
 // multiply/squaring path. Re-add 128-bit-diagonal unrolls later if measured.
-//
-// Kotlin's file-private `dw32(n: Int)` is the same as Magia.swift's global
-// `magia_dw32(_: Limb)`, so we reuse the global.
 
 let KARATSUBA_SQR_THRESHOLD = 84
 let SCHOOLBOOK_SQR_THRESHOLD = 12
@@ -43,44 +42,47 @@ func magia_setSqrSchoolbook(_ z: Magia, _ zOff: Int, _ x: Magia, _ xOff: Int, _ 
     precondition(xOff >= 0 && xOff + xNormLen <= x.size)
     // 1) Cross terms i < j
     for i in 0..<(xNormLen - 1) {
-        let ai = magia_dw32(x[xOff + i])
-        var carry: DWord = 0
+        let ai = x[xOff + i]
+        var carry: Limb = 0
         for j in (i + 1)..<xNormLen {
             let k = i + j
-            let t = ai &* magia_dw32(x[xOff + j]) &+ magia_dw32(z[zOff + k]) &+ carry
-            z[zOff + k] = t.toLimb()
-            carry = t >> 64
+            let (hi, lo) = ai.multipliedFullWidth(by: x[xOff + j])
+            let (s0, c0) = lo.addingReportingOverflow(z[zOff + k])
+            let (s1, c1) = s0.addingReportingOverflow(carry)
+            z[zOff + k] = s1
+            carry = hi &+ (c0 ? 1 : 0) &+ (c1 ? 1 : 0)
         }
-        z[zOff + i + xNormLen] = carry.toLimb()
+        z[zOff + i + xNormLen] = carry
     }
 
-    // 2) Double the cross terms: z = z * 2 (linear scan)
-    var shiftCarry: DWord = 0
+    // 2) Double the cross terms: z = z * 2 (linear scan, native shift)
+    var shiftCarry: Limb = 0
     for i in 0..<zLen {
-        let zi = magia_dw32(z[zOff + i])
-        let t = (zi << 1) | shiftCarry
-        z[zOff + i] = t.toLimb()
-        shiftCarry = t >> 64
+        let zi = z[zOff + i]
+        z[zOff + i] = (zi << 1) | shiftCarry
+        shiftCarry = zi >> 63
     }
 
     // 3) Diagonals: add a[i]^2 into column 2*i
     for i in 0..<xNormLen {
         var k = 2 * i
-        let zk = magia_dw32(z[zOff + k])
-        let ai = magia_dw32(x[xOff + i])
-        let sqa = ai &* ai &+ zk
-
-        z[zOff + k] = sqa.toLimb()
+        let ai = x[xOff + i]
+        let (sqHi, sqLo) = ai.multipliedFullWidth(by: ai)
+        let (lo, cLo) = sqLo.addingReportingOverflow(z[zOff + k])
+        z[zOff + k] = lo
+        // high word of ai^2 + z[k]; sqHi ≤ 2^64-2 so this never wraps
+        let sqaHi = sqHi &+ (cLo ? 1 : 0)
         k += 1
-        var carry = magia_dw32(z[zOff + k]) &+ (sqa >> 64)
-        z[zOff + k] = carry.toLimb()
-        carry = carry >> 64
+
+        let (s, c) = z[zOff + k].addingReportingOverflow(sqaHi)
+        z[zOff + k] = s
+        var carry: Limb = c ? 1 : 0
         k += 1
 
         while carry != 0 && k < zLen {
-            carry = magia_dw32(z[zOff + k]) &+ carry
-            z[zOff + k] = carry.toLimb()
-            carry = carry >> 64
+            let (s2, c2) = z[zOff + k].addingReportingOverflow(carry)
+            z[zOff + k] = s2
+            carry = c2 ? 1 : 0
             k += 1
         }
     }
@@ -93,10 +95,9 @@ func magia_setSqrSchoolbook(_ z: Magia, _ zOff: Int, _ x: Magia, _ xOff: Int, _ 
 
 private func setSqr1Limb(_ z: Magia, _ a: Magia) -> Int {
     // One 64-bit limb squared is a 128-bit (2-limb) result.
-    let p = a[0].toDw() &* a[0].toDw()
-    let hi = (p >> 64).toLimb()
+    let (hi, lo) = a[0].multipliedFullWidth(by: a[0])
     z[1] = hi
-    z[0] = p.toLimb()
+    z[0] = lo
     return hi == 0 ? 1 : 2
 }
 
@@ -152,18 +153,19 @@ func magia_ksetAdd(_ t: Magia, _ a: Magia, _ aOff: Int, _ k0: Int, _ k1: Int) {
         fatalError()
     }
 
-    var carry: DWord = 0
+    var carry: Limb = 0
     for i in 0..<k0 {
-        let tmp = magia_dw32(a[aOff + i]) &+ magia_dw32(a[a1Off + i]) &+ carry
-        t[i] = tmp.toLimb()
-        carry = tmp >> 64
+        let (s0, c0) = a[aOff + i].addingReportingOverflow(a[a1Off + i])
+        let (s1, c1) = s0.addingReportingOverflow(carry)
+        t[i] = s1
+        carry = (c0 ? 1 : 0) &+ (c1 ? 1 : 0)
     }
     if k0 < k1 {
-        let tmp = magia_dw32(a[a1Off + k0]) &+ carry
-        t[k0] = tmp.toLimb()
-        carry = tmp >> 64
+        let (s, c) = a[a1Off + k0].addingReportingOverflow(carry)
+        t[k0] = s
+        carry = c ? 1 : 0
     }
-    t[k1] = carry.toLimb()
+    t[k1] = carry
 }
 
 func magia_kmutSub(_ t: Magia, _ s2Off: Int, _ z: Magia, _ xOff: Int, _ xLen: Int) {
@@ -174,13 +176,14 @@ func magia_kmutSub(_ t: Magia, _ s2Off: Int, _ z: Magia, _ xOff: Int, _ xLen: In
         fatalError("kmutSub OOB")
     }
 
-    var borrow: DWord = 0
+    var borrow: Limb = 0
     for i in 0..<xLen {
         let tIdx = start + i
         let zIdx = xOff + i
-        let tmp = magia_dw32(t[tIdx]) &- magia_dw32(z[zIdx]) &- borrow
-        t[tIdx] = tmp.toLimb()
-        borrow = tmp >> 127
+        let (d0, b0) = t[tIdx].subtractingReportingOverflow(z[zIdx])
+        let (d1, b1) = d0.subtractingReportingOverflow(borrow)
+        t[tIdx] = d1
+        borrow = (b0 ? 1 : 0) &+ (b1 ? 1 : 0)
     }
 
     var k = end
@@ -189,9 +192,9 @@ func magia_kmutSub(_ t: Magia, _ s2Off: Int, _ z: Magia, _ xOff: Int, _ xLen: In
             // Borrow escaping t means (a0+a1)^2 < a0^2 + a1^2 — impossible.
             fatalError("Borrow escaped t.size in Karatsuba squaring")
         }
-        let tmp = magia_dw32(t[k]) &- borrow
-        t[k] = tmp.toLimb()
-        borrow = tmp >> 127
+        let (d, b) = t[k].subtractingReportingOverflow(borrow)
+        t[k] = d
+        borrow = b ? 1 : 0
         k += 1
     }
 }
@@ -204,18 +207,19 @@ func magia_kmutAddShifted(_ z: Magia, _ zOff: Int, _ t: Magia, _ z1Off: Int, _ z
         fatalError()
     }
 
-    var carry: DWord = 0
+    var carry: Limb = 0
     for i in 0..<z1Len {
-        let tmp = magia_dw32(z[start + i]) &+ magia_dw32(t[z1Off + i]) &+ carry
-        z[start + i] = tmp.toLimb()
-        carry = tmp >> 64
+        let (s0, c0) = z[start + i].addingReportingOverflow(t[z1Off + i])
+        let (s1, c1) = s0.addingReportingOverflow(carry)
+        z[start + i] = s1
+        carry = (c0 ? 1 : 0) &+ (c1 ? 1 : 0)
     }
 
     var k = end
     while carry != 0 && k < z.size {
-        let tmp = magia_dw32(z[k]) &+ carry
-        z[k] = tmp.toLimb()
-        carry = tmp >> 64
+        let (s, c) = z[k].addingReportingOverflow(carry)
+        z[k] = s
+        carry = c ? 1 : 0
         k += 1
     }
 }
