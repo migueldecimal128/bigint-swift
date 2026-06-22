@@ -321,7 +321,7 @@ public struct BigInt: BigIntNumber, Comparable {
 
     /// Combine two values word-wise in two's-complement, then rebuild.
     private func bitwise(_ other: BigInt, _ op: (Limb, Limb) -> Limb) -> BigInt {
-        let len = max(Int(meta.normLen), Int(other.meta.normLen)) + 1   // +1 sign word
+        let len = Swift.max(Int(meta.normLen), Int(other.meta.normLen)) + 1   // +1 sign word
         let xFnz = meta.isNegative ? firstNonzeroLimbIndex() : 0
         let yFnz = other.meta.isNegative ? other.firstNonzeroLimbIndex() : 0
         var result = [Limb](repeating: 0, count: len)
@@ -414,7 +414,7 @@ public struct BigInt: BigIntNumber, Comparable {
                 verify(!isSetOp)
                 return BigInt.ZERO
             }
-            let newBitLen = max(bitIndex + 1, magia_normBitLen(magia, Int(meta.normLen)))
+            let newBitLen = Swift.max(bitIndex + 1, magia_normBitLen(magia, Int(meta.normLen)))
             let m = magia_newCopyWithExactBitLen(magia, Int(meta.normLen), newBitLen)
             let wordIndex = bitIndex >> 6
             let isolatedBit: Limb = 1 << (bitIndex & 0x3F)
@@ -450,7 +450,7 @@ public struct BigInt: BigIntNumber, Comparable {
         if bitWidth == 0 || bitIndex >= myBitLen { return BigInt.ZERO }
         if bitWidth == 1 && !testBit(bitIndex) { return BigInt.ZERO }
         if bitWidth == 1 { return BigInt.withSetBit(bitIndex) }
-        let clampedBitLen = min(bitWidth + bitIndex, myBitLen)
+        let clampedBitLen = Swift.min(bitWidth + bitIndex, myBitLen)
         let ret = magia_newCopyWithExactBitLen(magia, Int(meta.normLen), clampedBitLen)
         let nlz = (ret.size << 6) - clampedBitLen
         ret[ret.size - 1] = ret[ret.size - 1] & (Limb.max >> nlz)
@@ -519,7 +519,7 @@ public struct BigInt: BigIntNumber, Comparable {
         if thisSign == otherSign {
             let thisBitLen = magnitudeBitLen()
             let otherBitLen = other.magnitudeBitLen()
-            let zBitLen = max(thisBitLen, otherBitLen) + 1
+            let zBitLen = Swift.max(thisBitLen, otherBitLen) + 1
             let z = Magia(magia_limbLenFromBitLen(zBitLen))
             let zNormLen: Int
             if thisNormLen >= otherNormLen {
@@ -556,7 +556,7 @@ public struct BigInt: BigIntNumber, Comparable {
             if thisNormLen > 0 && thisSign == otherSign && w != 0 {
                 let wBitLen = 64 - Int(w.leadingZeroBitCount)
                 let thisBitLen = magia_nonZeroNormBitLen(magia, thisNormLen)
-                let newBitLen = max(thisBitLen, wBitLen) + 1
+                let newBitLen = Swift.max(thisBitLen, wBitLen) + 1
                 let z = magia.copyOf(magia_limbLenFromBitLen(newBitLen))
                 return BigInt.fromNormalizedNonZero(thisSign, z, magia_mutAddLimb(z, thisNormLen, w))
             }
@@ -586,7 +586,7 @@ public struct BigInt: BigIntNumber, Comparable {
             if thisNormLen > 0 && thisSign == otherSign && dw != 0 {
                 let wBitLen = 64 - Int(dw.leadingZeroBitCount)
                 let thisBitLen = magia_nonZeroNormBitLen(magia, thisNormLen)
-                let newBitLen = max(thisBitLen, wBitLen) + 1
+                let newBitLen = Swift.max(thisBitLen, wBitLen) + 1
                 let z = magia.copyOf(magia_limbLenFromBitLen(newBitLen))
                 return BigInt.fromNormalizedNonZero(thisSign, z, magia_mutAddLimb(z, thisNormLen, dw))
             }
@@ -961,6 +961,13 @@ extension BigInt {
 // All requirements are now in place (words/bitWidth/trailingZeroBitCount/isSigned,
 // the float+integer inits, signum, /, %, and the operators above).
 extension BigInt: BinaryInteger {}
+
+// SignedInteger is a marker refinement of BinaryInteger + SignedNumeric (both
+// already conformed); it adds no requirements. NOTE: it brings the stdlib's
+// SignedInteger `max`/`min` into BigInt's type scope, which shadows the global
+// Swift.max/Swift.min inside BigInt's own methods — those call sites are
+// qualified as `Swift.max`/`Swift.min` accordingly.
+extension BigInt: SignedInteger {}
 
 // ============================================================================
 // DEFERRED from BigInt.kt: from(CharSequence/CharArray/ByteArray) parse
