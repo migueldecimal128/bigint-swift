@@ -29,7 +29,9 @@ extension BigIntNumber {
     public func isOne() -> Bool { meta._meta == 1 && magia[0] == 1 }
     public func isNegative() -> Bool { meta.isNegative }
     public func isPositive() -> Bool { meta.isPositive }
-    public func signum() -> Int32 { meta.signum }
+    /// Sign as a plain `Int` (-1, 0, 1). Renamed from `signum()` so that name is
+    /// free for the `Self`-returning `BinaryInteger.signum()`.
+    public func signumInt() -> Int { Int(meta.signum) }
     public func isEven() -> Bool { isZero() || (magia[0] & 1) == 0 }
     public func isOdd() -> Bool { isNotZero() && (magia[0] & 1) != 0 }
     public func isMagnitudePowerOfTwo() -> Bool { magia_isPowerOfTwo(magia, Int(meta.normLen)) }

@@ -822,6 +822,12 @@ extension BigInt {
     /// `BinaryInteger.isSigned` — BigInt is a signed type.
     public static var isSigned: Bool { true }
 
+    /// `BinaryInteger.signum()` — sign as `Self` (-1, 0, 1). The plain-`Int` form
+    /// is `signumInt()`.
+    public func signum() -> BigInt {
+        isZero() ? BigInt.ZERO : (meta.isNegative ? BigInt.NEG_ONE : BigInt.ONE)
+    }
+
     /// `BinaryInteger.bitWidth` — minimal two's-complement width INCLUDING the
     /// sign bit (Java `bitLength()` + 1). Zero → 1.
     public var bitWidth: Int { bitLengthBigIntegerStyle() + 1 }

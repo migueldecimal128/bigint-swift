@@ -25,9 +25,9 @@ import Testing
             #expect(BigInt.from(n).toInt() == n)
         }
         #expect(BigInt.from(Int32(0)).isZero())
-        #expect(BigInt.from(Int32(-5)).signum() == -1)
-        #expect(BigInt.from(Int32(5)).signum() == 1)
-        #expect(BigInt.from(Int32(0)).signum() == 0)
+        #expect(BigInt.from(Int32(-5)).signumInt() == -1)
+        #expect(BigInt.from(Int32(5)).signumInt() == 1)
+        #expect(BigInt.from(Int32(0)).signumInt() == 0)
     }
 
     @Test func fromLongRoundTrip() {
