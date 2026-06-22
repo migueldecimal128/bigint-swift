@@ -239,7 +239,9 @@ public struct BigInt: BigIntNumber, Comparable {
     public func abs() -> BigInt { isNegative() ? BigInt(meta.abs(), magia) : self }
     public var absoluteValue: BigInt { abs() }
 
-    public func negate() -> BigInt {
+    /// Non-mutating negation (Swift `-ed` convention; the in-place form is the
+    /// `SignedNumeric` `mutating func negate()`).
+    public func negated() -> BigInt {
         if !isZero() {
             biStat(.BI_NEGATE)
             return BigInt(meta.negate(), magia)
@@ -247,9 +249,9 @@ public struct BigInt: BigIntNumber, Comparable {
         return BigInt.ZERO
     }
 
-    public func withSign(_ sign: Bool) -> BigInt { isNegative() == sign ? self : negate() }
+    public func withSign(_ sign: Bool) -> BigInt { isNegative() == sign ? self : negated() }
     public func withSignOf(_ other: BigIntNumber) -> BigInt {
-        isNegative() == other.isNegative() ? self : negate()
+        isNegative() == other.isNegative() ? self : negated()
     }
 
     // MARK: square / pow / gcd / algorithms (Phase 3 BigIntAlgorithms)
@@ -480,7 +482,7 @@ public struct BigInt: BigIntNumber, Comparable {
         }
         if thisNormLen == 0 {
             if let o = other as? BigInt {
-                return isSub ? o.negate() : o
+                return isSub ? o.negated() : o
             }
             return BigInt.from(other.meta.signFlag != isSub, other)
         }
@@ -720,7 +722,7 @@ public struct BigInt: BigIntNumber, Comparable {
 
     // MARK: operators
 
-    public static prefix func - (x: BigInt) -> BigInt { x.negate() }
+    public static prefix func - (x: BigInt) -> BigInt { x.negated() }
     public static prefix func + (x: BigInt) -> BigInt { x }
 
     public static func + (lhs: BigInt, rhs: BigInt) -> BigInt { lhs.addImpl(false, rhs) }
@@ -796,6 +798,11 @@ extension BigInt: Numeric {
 
     public static func *= (lhs: inout BigInt, rhs: BigInt) { lhs = lhs * rhs }
 }
+
+// SignedNumeric: refines Numeric (done); prefix `-` is already provided. The
+// protocol's `mutating func negate()` requirement is met by the stdlib default
+// (self = -self); the non-mutating value-returning form is `negated() -> BigInt`.
+extension BigInt: SignedNumeric {}
 
 // ============================================================================
 // DEFERRED from BigInt.kt: from(CharSequence/CharArray/ByteArray) parse

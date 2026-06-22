@@ -284,7 +284,7 @@ import Testing
     private func randomBigInt(_ hiBitLen: Int) -> BigInt {
         let n = Int(rng.nextInt(Int32(hiBitLen)))
         let v = BigInt.randomWithMaxBitLen(n, rng)
-        return rng.nextBoolean() ? v.negate() : v
+        return rng.nextBoolean() ? v.negated() : v
     }
 
     private func randomInt() -> Int32 {

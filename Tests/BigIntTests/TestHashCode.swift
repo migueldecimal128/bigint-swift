@@ -32,7 +32,7 @@ import Testing
         for _ in 0..<1000 {
             let hiPos = BigInt.randomWithMaxBitLen(Int(rng.nextInt(10)))
             // hiNeg will not be negative in the case of zero
-            let hiNeg = hiPos.negate()
+            let hiNeg = hiPos.negated()
             #expect((hiNeg + hiPos).EQ(Int32(0)))
 
             let hashPos = biHashCode(hiPos)

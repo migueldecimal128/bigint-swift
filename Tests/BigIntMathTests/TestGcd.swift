@@ -50,9 +50,9 @@ import Testing
 
     private func testSigns(_ x: BigInt, _ y: BigInt) {
         let gcd0 = BigInt.gcd(x, y)
-        let gcd1 = BigInt.gcd(x, y.negate())
-        let gcd2 = BigInt.gcd(x.negate(), y)
-        let gcd3 = BigInt.gcd(x.negate(), y.negate())
+        let gcd1 = BigInt.gcd(x, y.negated())
+        let gcd2 = BigInt.gcd(x.negated(), y)
+        let gcd3 = BigInt.gcd(x.negated(), y.negated())
 
         #expect(gcd1 == gcd0)
         #expect(gcd2 == gcd0)

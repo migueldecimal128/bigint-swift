@@ -33,7 +33,7 @@ import Testing
         #expect(m.toULongMagnitude() == 2)         // low 64 bits
         // cross-check against BigInt arithmetic: 2^64 == (2^32)*(2^32)
         let twoTo64 = BigInt.from(UInt64(1) << 32) * BigInt.from(UInt64(1) << 32)
-        #expect(m.toBigInt() == (twoTo64 + BigInt.from(Int32(2))).negate())
+        #expect(m.toBigInt() == (twoTo64 + BigInt.from(Int32(2))).negated())
     }
 
     @Test func signMutations() {
