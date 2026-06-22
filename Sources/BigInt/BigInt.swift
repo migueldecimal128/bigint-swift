@@ -288,43 +288,73 @@ public struct BigInt: BigIntNumber, Comparable {
     // factorial(_:) / gcd(_:_:) / lcm(_:_:) live in the BigIntMath module
     // (extensions on BigInt). Import BigIntMath to use them.
 
-    // MARK: bit operations (magnitude-only; non-negative results)
+    // MARK: bit operations (two's-complement, matching java.math.BigInteger)
+    //
+    // Negative operands participate via infinite sign extension (e.g. -1 & x == x,
+    // ~x == -x - 1). The n-th limb of a value's two's-complement form is computed
+    // on the fly (no full carry pass) by twosComplementLimb(); ops run word-wise
+    // over max(len)+1 limbs (the +1 sign word keeps a non-negative operand whose
+    // top limb has bit 63 set reading as positive), then rebuild from the result.
+    // (Previously these were magnitude-only / always-non-negative; that divergence
+    // from BigInteger has been removed.)
 
-    public func and(_ other: BigInt) -> BigInt {
-        var iLast = min(Int(meta.normLen), Int(other.meta.normLen))
-        let thisMagia = magia, otherMagia = other.magia
-        if iLast <= thisMagia.size && iLast <= otherMagia.size {
-            repeat {
-                iLast -= 1
-                if iLast < 0 { return BigInt.ZERO }
-            } while (thisMagia[iLast] & otherMagia[iLast]) == 0
-            let z = Magia(iLast + 1)
-            while iLast >= 0 {
-                z[iLast] = thisMagia[iLast] & otherMagia[iLast]
-                iLast -= 1
-            }
-            return BigInt.fromNormalizedNonZero(z)
-        }
-        throwBoundsCheckViolation()
+    /// Little-endian index of the lowest non-zero magnitude limb (negatives only).
+    private func firstNonzeroLimbIndex() -> Int {
+        let n = Int(meta.normLen)
+        var i = 0
+        while i < n && magia[i] == 0 { i += 1 }
+        return i
     }
 
-    public func or(_ other: BigInt) -> BigInt {
-        let thisNormLen = Int(meta.normLen), otherNormLen = Int(other.meta.normLen)
-        let maxLen = max(thisNormLen, otherNormLen)
-        if maxLen > 0 {
-            let z = Magia(maxLen)
-            return BigInt.fromNormalizedNonZero(z, magia_setOr(z, magia, thisNormLen, other.magia, otherNormLen))
-        }
-        return BigInt.ZERO
+    /// The `n`-th limb (little-endian) of this value's two's-complement form, with
+    /// infinite sign extension. `firstNonzero` is `firstNonzeroLimbIndex()` for
+    /// negatives (ignored when non-negative).
+    private func twosComplementLimb(_ n: Int, _ firstNonzero: Int) -> Limb {
+        let len = Int(meta.normLen)
+        if n >= len { return meta.isNegative ? Limb.max : 0 }   // sign extension
+        let m = magia[n]
+        if !meta.isNegative { return m }
+        if n < firstNonzero { return 0 }            // trailing zeros stay zero
+        if n == firstNonzero { return 0 &- m }      // negate lowest non-zero limb
+        return ~m                                   // invert above it
     }
 
-    public func xor(_ other: BigInt) -> BigInt {
-        let thisNormLen = Int(meta.normLen), otherNormLen = Int(other.meta.normLen)
-        let maxLen = max(thisNormLen, otherNormLen)
-        let z = Magia(maxLen)
-        let zNormLen = magia_setXor(z, magia, thisNormLen, other.magia, otherNormLen)
-        if zNormLen > 0 { return BigInt.fromNormalizedNonZero(z, zNormLen) }
-        return BigInt.ZERO
+    /// Combine two values word-wise in two's-complement, then rebuild.
+    private func bitwise(_ other: BigInt, _ op: (Limb, Limb) -> Limb) -> BigInt {
+        let len = max(Int(meta.normLen), Int(other.meta.normLen)) + 1   // +1 sign word
+        let xFnz = meta.isNegative ? firstNonzeroLimbIndex() : 0
+        let yFnz = other.meta.isNegative ? other.firstNonzeroLimbIndex() : 0
+        var result = [Limb](repeating: 0, count: len)
+        for i in 0..<len {
+            result[i] = op(twosComplementLimb(i, xFnz), other.twosComplementLimb(i, yFnz))
+        }
+        return BigInt.fromTwosComplementLittleEndian(result)
+    }
+
+    /// Bitwise AND (two's-complement).
+    public func and(_ other: BigInt) -> BigInt { bitwise(other) { $0 & $1 } }
+    /// Bitwise OR (two's-complement).
+    public func or(_ other: BigInt) -> BigInt { bitwise(other) { $0 | $1 } }
+    /// Bitwise XOR (two's-complement).
+    public func xor(_ other: BigInt) -> BigInt { bitwise(other) { $0 ^ $1 } }
+    /// Bitwise NOT (`~self == -self - 1`).
+    public func not() -> BigInt { negated() - BigInt.ONE }
+
+    /// Builds a BigInt from a little-endian two's-complement limb array (as
+    /// produced by the bitwise ops): the top limb's sign bit gives the sign; for a
+    /// negative result the magnitude is the two's complement (`~w + 1`) of the words.
+    private static func fromTwosComplementLittleEndian(_ words: [Limb]) -> BigInt {
+        if words[words.count - 1] >> 63 == 0 {
+            return fromLittleEndianIntArray(false, words)
+        }
+        var mag = [Limb](repeating: 0, count: words.count)
+        var carry: Limb = 1
+        for i in 0..<words.count {
+            let (s, c) = (~words[i]).addingReportingOverflow(carry)
+            mag[i] = s
+            carry = c ? 1 : 0
+        }
+        return fromLittleEndianIntArray(true, mag)
     }
 
     public func ushr(_ bitCount: Int) -> BigInt {

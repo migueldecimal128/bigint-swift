@@ -697,82 +697,11 @@ func magia_ctz(_ x: Magia, _ normLen: Int) -> Int {
 }
 
 // MARK: - bitwise
-
-/// `z = x AND y`; supports aliasing. Returns normalized length.
-func magia_setAnd(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
-    if xNormLen >= 0 && xNormLen <= x.size && yNormLen >= 0 && yNormLen <= y.size {
-        verify(magia_isNormalized(x, xNormLen))
-        verify(magia_isNormalized(y, yNormLen))
-        let minLen = min(xNormLen, yNormLen)
-        if minLen <= z.size {
-            var i = minLen
-            repeat {
-                i -= 1
-                if i < 0 { return 0 }
-            } while (x[i] & y[i]) == 0
-            let zNormLen = i + 1
-            while i >= 0 {
-                z[i] = x[i] & y[i]
-                i -= 1
-            }
-            verify(magia_isNormalized(z, zNormLen))
-            return zNormLen
-        }
-    }
-    throwBoundsCheckViolation()
-}
-
-/// `z = x OR y`; supports aliasing. Returns normalized length.
-func magia_setOr(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
-    if xNormLen >= 0 && xNormLen <= x.size && yNormLen >= 0 && yNormLen <= y.size {
-        verify(magia_isNormalized(x, xNormLen))
-        verify(magia_isNormalized(y, yNormLen))
-        let maxLen = max(xNormLen, yNormLen)
-        if maxLen <= z.size {
-            let minLen = min(xNormLen, yNormLen)
-            let zNormLen = maxLen
-            for i in 0..<minLen {
-                z[i] = x[i] | y[i]
-            }
-            if minLen < xNormLen {
-                x.copyInto(z, minLen, minLen, xNormLen)
-            } else if minLen < yNormLen {
-                y.copyInto(z, minLen, minLen, yNormLen)
-            }
-            verify(magia_isNormalized(z, zNormLen))
-            return zNormLen
-        }
-    }
-    throwBoundsCheckViolation()
-}
-
-/// `z = x XOR y`; supports aliasing. Returns normalized length.
-func magia_setXor(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia, _ yNormLen: Int) -> Int {
-    if xNormLen >= 0 && xNormLen <= x.size && yNormLen >= 0 && yNormLen <= y.size {
-        verify(magia_isNormalized(x, xNormLen))
-        verify(magia_isNormalized(y, yNormLen))
-        let maxLen = max(xNormLen, yNormLen)
-        if maxLen <= z.size {
-            let minLen = min(xNormLen, yNormLen)
-            for i in 0..<minLen {
-                z[i] = x[i] ^ y[i]
-            }
-            let zNormLen: Int
-            if minLen < xNormLen {
-                x.copyInto(z, minLen, minLen, xNormLen)
-                zNormLen = xNormLen
-            } else if minLen < yNormLen {
-                y.copyInto(z, minLen, minLen, yNormLen)
-                zNormLen = yNormLen
-            } else {
-                zNormLen = magia_normLen(z, minLen)
-            }
-            verify(magia_isNormalized(z, zNormLen))
-            return zNormLen
-        }
-    }
-    throwBoundsCheckViolation()
-}
+//
+// magia_setAnd / magia_setOr / magia_setXor removed: the BigInt/MutableBigInt
+// bitwise ops are now two's-complement (matching java.math.BigInteger) and are
+// implemented at the BigInt layer (BigInt.bitwise / twosComplementLimb), so the
+// old magnitude-only engine kernels are no longer used.
 
 // MARK: - bit tests / extraction
 

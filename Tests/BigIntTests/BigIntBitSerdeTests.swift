@@ -64,10 +64,10 @@ import Testing
         let rng = Rng()
         for _ in 0..<6000 {
             let a = rng.i128(120), b = rng.i128(120)
-            let am = a.magnitude, bm = b.magnitude
-            #expect(u128mag(big(a).and(big(b))) == (am & bm))
-            #expect(u128mag(big(a).or(big(b))) == (am | bm))
-            #expect(u128mag(big(a).xor(big(b))) == (am ^ bm))
+            // and/or/xor are two's-complement (vs signed Int128)
+            #expect(i128(big(a).and(big(b))) == (a & b))
+            #expect(i128(big(a).or(big(b))) == (a | b))
+            #expect(i128(big(a).xor(big(b))) == (a ^ b))
 
             let small = rng.i128(60)
             let k = Int(rng.next() % 60) + 1     // 1..60

@@ -1,8 +1,8 @@
 import Testing
 @testable import BigInt
 
-// MutableBigInt bit ops vs UInt128. and/or/xor act on magnitudes (non-negative
-// result); setBit/clearBit/applyBitMask act on the magnitude, keeping sign.
+// MutableBigInt bit ops. and/or/xor are two's-complement (vs signed Int128);
+// setBit/clearBit/applyBitMask act on the magnitude, keeping sign.
 
 @Suite struct MutableBigIntBitTests {
 
@@ -50,13 +50,11 @@ import Testing
     @Test func andOrXor() {
         let rng = Rng()
         for _ in 0..<6000 {
-            let a = rng.i128(120), b = rng.i128(120)
-            let am = a.magnitude, bm = b.magnitude
-            #expect(u128mag(MutableBigInt().setAnd(big(a), big(b))) == (am & bm))
-            #expect(u128mag(MutableBigInt().setOr(big(a), big(b))) == (am | bm))
-            #expect(u128mag(MutableBigInt().setXor(big(a), big(b))) == (am ^ bm))
-            // results are non-negative
-            #expect(MutableBigInt().setAnd(big(a), big(b)).isPositive())
+            let a = rng.i128(120), b = rng.i128(120)   // signed operands
+            // two's-complement results, validated against signed Int128 ops
+            #expect(i128(MutableBigInt().setAnd(big(a), big(b))) == (a & b))
+            #expect(i128(MutableBigInt().setOr(big(a), big(b))) == (a | b))
+            #expect(i128(MutableBigInt().setXor(big(a), big(b))) == (a ^ b))
         }
     }
 

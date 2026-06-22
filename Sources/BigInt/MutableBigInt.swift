@@ -674,56 +674,41 @@ public final class MutableBigInt: BigIntNumber {
 
     // MARK: bitwise and/or/xor (engine: setAnd/setOr/setXor; aliasing-safe)
 
+    // NOTE: setAnd/setOr/setXor/setNot delegate to the BigInt two's-complement
+    // combiner rather than mutating the accumulator buffer in place. This is the
+    // simple, correct form and guarantees Mbi and BigInt give identical results,
+    // but unlike the other set* ops it ALLOCATES (a snapshot of any aliased
+    // operand plus the result) instead of being zero-alloc/in-place. Acceptable
+    // because bitwise ops are not on a hot path in the consumers (the recipmul
+    // oracle uses div/mul/shift; xor is rare mask reconstruction). If Mbi bitwise
+    // ever lands on a hot path, reimplement in-place with a sign-aware engine
+    // kernel (the old magnitude-only magia_setAnd/Or/Xor were removed in this change).
+
     @discardableResult public func setAnd(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
-        verify(x.isNormalized())
-        verify(y.isNormalized())
-        let xNormLen = Int(x.meta.normLen)
-        let yNormLen = Int(y.meta.normLen)
-        let minNormLen = min(xNormLen, yNormLen)
-        if minNormLen == 0 { return setZero() }
-        let xMagia = x.magia
-        let yMagia = y.magia
-        ensureMagiaCapacityDiscard(minNormLen)
-        updateMeta(Meta(signBit: 0, normLen: Int32(magia_setAnd(magia, xMagia, xNormLen, yMagia, yNormLen))))
-        verify(isNormalized())
-        return self
+        // Two's-complement AND (matches java.math.BigInteger). Computed into a
+        // fresh BigInt before writing self, so aliasing (x or y === self) is safe.
+        set(x.toBigInt().and(y.toBigInt()))
     }
 
     @discardableResult public func mutAnd(_ y: BigIntNumber) -> MutableBigInt { setAnd(self, y) }
 
     @discardableResult public func setOr(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
-        verify(x.isNormalized())
-        verify(y.isNormalized())
-        let xNormLen = Int(x.meta.normLen)
-        let yNormLen = Int(y.meta.normLen)
-        let maxNormLen = max(xNormLen, yNormLen)
-        if maxNormLen == 0 { return setZero() }
-        let xMagia = x.magia
-        let yMagia = y.magia
-        ensureMagiaCapacityDiscard(maxNormLen)
-        updateMeta(Meta(signBit: 0, normLen: Int32(magia_setOr(magia, xMagia, xNormLen, yMagia, yNormLen))))
-        verify(isNormalized())
-        return self
+        set(x.toBigInt().or(y.toBigInt()))   // two's-complement OR; aliasing-safe
     }
 
     @discardableResult public func mutOr(_ y: BigIntNumber) -> MutableBigInt { setOr(self, y) }
 
     @discardableResult public func setXor(_ x: BigIntNumber, _ y: BigIntNumber) -> MutableBigInt {
-        verify(x.isNormalized())
-        verify(y.isNormalized())
-        let xNormLen = Int(x.meta.normLen)
-        let yNormLen = Int(y.meta.normLen)
-        let maxNormLen = max(xNormLen, yNormLen)
-        if maxNormLen == 0 { return setZero() }
-        let xMagia = x.magia
-        let yMagia = y.magia
-        ensureMagiaCapacityDiscard(maxNormLen)
-        updateMeta(Meta(signBit: 0, normLen: Int32(magia_setXor(magia, xMagia, xNormLen, yMagia, yNormLen))))
-        verify(isNormalized())
-        return self
+        set(x.toBigInt().xor(y.toBigInt()))  // two's-complement XOR; aliasing-safe
     }
 
     @discardableResult public func mutXor(_ y: BigIntNumber) -> MutableBigInt { setXor(self, y) }
+
+    /// Sets self to the two's-complement NOT of `x` (`~x == -x - 1`).
+    @discardableResult public func setNot(_ x: BigIntNumber) -> MutableBigInt { set(x.toBigInt().not()) }
+
+    /// In-place two's-complement NOT (`self = ~self`).
+    @discardableResult public func mutNot() -> MutableBigInt { setNot(self) }
 
     // MARK: addSquareOf / addAbsValueOf (accumulators)
 

@@ -11,34 +11,10 @@ import Testing
         let m = Magia(8); m[0] = lo; m[1] = hi; return m
     }
 
-    @Test func andOrXor() {
-        let a = u64(0xFF00_FF00_FF00_FF00)
-        let b = u64(0x0FF0_0FF0_0FF0_0FF0)
-        let an = 1, bn = 1                       // a UInt64 is one 64-bit limb
-
-        let zAnd = Magia(8)
-        let nAnd = magia_setAnd(zAnd, a, an, b, bn)
-        #expect(magia_toRawULong(zAnd, nAnd) == ((0xFF00_FF00_FF00_FF00 as UInt64) & 0x0FF0_0FF0_0FF0_0FF0))
-
-        let zOr = Magia(8)
-        let nOr = magia_setOr(zOr, a, an, b, bn)
-        #expect(magia_toRawULong(zOr, nOr) == ((0xFF00_FF00_FF00_FF00 as UInt64) | 0x0FF0_0FF0_0FF0_0FF0))
-
-        let zXor = Magia(8)
-        let nXor = magia_setXor(zXor, a, an, b, bn)
-        #expect(magia_toRawULong(zXor, nXor) == ((0xFF00_FF00_FF00_FF00 as UInt64) ^ 0x0FF0_0FF0_0FF0_0FF0))
-    }
-
-    @Test func andDifferentLengthsAndCancellation() {
-        let a = twoLimb(0xF0, 0xFFFF_FFFF_FFFF_FFFF)  // 2 limbs
-        let b = u64(0xF0)                              // 1 limb
-        let z = Magia(8)
-        let n = magia_setAnd(z, a, 2, b, 1)
-        #expect(magia_toRawULong(z, n) == 0xF0)
-        // AND to zero -> length 0
-        let c = u64(0x0F)
-        #expect(magia_setAnd(Magia(8), b, 1, c, 1) == 0)
-    }
+    // The magnitude-only engine kernels (magia_setAnd/setOr/setXor) were removed
+    // when the bitwise ops moved to two's-complement at the BigInt layer; their
+    // tests now live in TestBigIntTwosComplementBitwise. The compare / bit-test
+    // cases below exercise still-present engine functions.
 
     @Test func compareOrdering() {
         #expect(magia_compare(u64(5), 1, u64(7), 1) == -1)
