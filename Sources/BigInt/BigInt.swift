@@ -928,6 +928,40 @@ extension BigInt {
     }
 }
 
+// ----------------------------------------------------------------------------
+// BinaryInteger operators: wrap the two's-complement methods (and/or/xor/not)
+// and the existing shifts. The `<<` / `>>` operators are "smart shifts" — a
+// negative count reverses direction, and `>>` is arithmetic (sign-preserving,
+// toward -inf), via shl/shr. Compound forms provided explicitly (the stdlib
+// supplies no defaults for these, as with Numeric `*=`).
+// ----------------------------------------------------------------------------
+extension BigInt {
+    public static func & (lhs: BigInt, rhs: BigInt) -> BigInt { lhs.and(rhs) }
+    public static func | (lhs: BigInt, rhs: BigInt) -> BigInt { lhs.or(rhs) }
+    public static func ^ (lhs: BigInt, rhs: BigInt) -> BigInt { lhs.xor(rhs) }
+    public static prefix func ~ (x: BigInt) -> BigInt { x.not() }
+
+    public static func &= (lhs: inout BigInt, rhs: BigInt) { lhs = lhs & rhs }
+    public static func |= (lhs: inout BigInt, rhs: BigInt) { lhs = lhs | rhs }
+    public static func ^= (lhs: inout BigInt, rhs: BigInt) { lhs = lhs ^ rhs }
+
+    public static func << <RHS: BinaryInteger>(lhs: BigInt, rhs: RHS) -> BigInt {
+        rhs >= 0 ? lhs.shl(Int(clamping: rhs)) : lhs.shr(Int(clamping: rhs.magnitude))
+    }
+    public static func >> <RHS: BinaryInteger>(lhs: BigInt, rhs: RHS) -> BigInt {
+        rhs >= 0 ? lhs.shr(Int(clamping: rhs)) : lhs.shl(Int(clamping: rhs.magnitude))
+    }
+    public static func <<= <RHS: BinaryInteger>(lhs: inout BigInt, rhs: RHS) { lhs = lhs << rhs }
+    public static func >>= <RHS: BinaryInteger>(lhs: inout BigInt, rhs: RHS) { lhs = lhs >> rhs }
+
+    public static func /= (lhs: inout BigInt, rhs: BigInt) { lhs = lhs / rhs }
+    public static func %= (lhs: inout BigInt, rhs: BigInt) { lhs = lhs % rhs }
+}
+
+// All requirements are now in place (words/bitWidth/trailingZeroBitCount/isSigned,
+// the float+integer inits, signum, /, %, and the operators above).
+extension BigInt: BinaryInteger {}
+
 // ============================================================================
 // DEFERRED from BigInt.kt: from(CharSequence/CharArray/ByteArray) parse
 // overloads (minor; String done). from(Double)/fromULongShiftLeft, the random
