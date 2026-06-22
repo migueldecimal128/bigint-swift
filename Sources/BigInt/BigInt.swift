@@ -804,6 +804,94 @@ extension BigInt: Numeric {
 // (self = -self); the non-mutating value-returning form is `negated() -> BigInt`.
 extension BigInt: SignedNumeric {}
 
+// ----------------------------------------------------------------------------
+// BinaryInteger groundwork (the trivial members + `words`). NOT yet declaring
+// `: BinaryInteger` — that also needs the two's-complement bitwise operators
+// (& | ^ ~) and the smart-shift operators, which are not implemented yet. These
+// members are added standalone so they're usable and testable in the meantime;
+// flipping on the conformance is a later step.
+// ----------------------------------------------------------------------------
+
+// CustomStringConvertible is independent of BinaryInteger and safe to add now.
+extension BigInt: CustomStringConvertible {
+    public var description: String { toString() }
+}
+
+extension BigInt {
+
+    /// `BinaryInteger.isSigned` — BigInt is a signed type.
+    public static var isSigned: Bool { true }
+
+    /// `BinaryInteger.bitWidth` — minimal two's-complement width INCLUDING the
+    /// sign bit (Java `bitLength()` + 1). Zero → 1.
+    public var bitWidth: Int { bitLengthBigIntegerStyle() + 1 }
+
+    /// `BinaryInteger.trailingZeroBitCount` — equals the magnitude's trailing
+    /// zero count (a value and its two's complement share trailing zeros). Zero
+    /// has no set bits; we report 0.
+    public var trailingZeroBitCount: Int { isZero() ? 0 : countTrailingZeroBits() }
+
+    /// `BinaryInteger.Words` — the two's-complement representation as
+    /// little-endian `UInt` (== `Limb` on the 64-bit-only target).
+    public typealias Words = [UInt]
+
+    /// Little-endian two's-complement words, with infinite sign extension: the
+    /// top word's high bit is the sign. A trailing sign word (0 / all-ones) is
+    /// appended when the magnitude's top bit would otherwise misencode the sign.
+    public var words: [UInt] {
+        if isZero() { return [0] }
+        let n = Int(meta.normLen)
+        var result = [UInt]()
+        result.reserveCapacity(n + 1)
+        if !meta.isNegative {
+            for i in 0..<n { result.append(UInt(magia[i])) }
+            if result[result.count - 1] >> 63 == 1 { result.append(0) }  // keep sign positive
+        } else {
+            var carry: UInt64 = 1                                          // two's complement = ~mag + 1
+            for i in 0..<n {
+                let (s, c) = (~magia[i]).addingReportingOverflow(carry)
+                result.append(UInt(s))
+                carry = c ? 1 : 0
+            }
+            if result[result.count - 1] >> 63 == 0 { result.append(.max) } // keep sign negative
+        }
+        return result
+    }
+
+    // MARK: - constructors from any BinaryInteger / BinaryFloatingPoint
+
+    /// `BinaryInteger.init(_:)` — exact (arbitrary precision represents every
+    /// integer). 64-bit fast paths; wider sources rebuilt from the magnitude's
+    /// little-endian words.
+    public init<T: BinaryInteger>(_ source: T) {
+        if let i = Int64(exactly: source) { self = BigInt.from(i); return }
+        if let u = UInt64(exactly: source) { self = BigInt.from(u); return }
+        let limbs = source.magnitude.words.map { Limb($0) }
+        self = BigInt.fromLittleEndianIntArray(source < 0, Array(limbs))
+    }
+
+    /// `truncatingIfNeeded` / `clamping` — both no-ops at infinite width, so they
+    /// reduce to the exact `init(_:)`.
+    public init<T: BinaryInteger>(truncatingIfNeeded source: T) { self.init(source) }
+    public init<T: BinaryInteger>(clamping source: T) { self.init(source) }
+
+    /// `BinaryInteger.init(_:)` from a float — rounds toward zero (drops the
+    /// fractional part). Traps on NaN/∞ per the protocol contract.
+    /// NOTE: routed through `Double`, so sources wider than `Double` (e.g.
+    /// `Float80`) may lose precision in the integral part for very large values.
+    public init<T: BinaryFloatingPoint>(_ source: T) {
+        precondition(source.isFinite, "BigInt(\(source)): value is not finite")
+        self = BigInt.from(Double(source))
+    }
+
+    /// `BinaryInteger.init?(exactly:)` from a float — succeeds only when finite
+    /// and integral (no fractional part). Same `Double` precision caveat as above.
+    public init?<T: BinaryFloatingPoint>(exactly source: T) {
+        guard source.isFinite, source == source.rounded(.towardZero) else { return nil }
+        self = BigInt.from(Double(source))
+    }
+}
+
 // ============================================================================
 // DEFERRED from BigInt.kt: from(CharSequence/CharArray/ByteArray) parse
 // overloads (minor; String done). from(Double)/fromULongShiftLeft, the random
