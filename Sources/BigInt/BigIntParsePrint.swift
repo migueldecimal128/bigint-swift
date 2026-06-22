@@ -2,8 +2,15 @@
 //
 // Port of BigIntParsePrint.kt — decimal/hex parse and print. Kotlin `object` →
 // Swift caseless `enum`. ByteArray → [UInt8]; print buffers are mutated via
-// `inout [UInt8]`. Decimal chunking stays base 1e9 (9 digits/chunk); the per-limb
-// 1e9 long-division uses DWord (UInt128). Hex uses 16 nybbles per 64-bit limb.
+// `inout [UInt8]`. Decimal PARSE chunks base 1e19 (19 digits/chunk — the most
+// that fit a 64-bit limb); PRINT still chunks base 1e9 and its per-limb 1e9
+// long-division uses DWord (UInt128). Hex uses 16 nybbles per 64-bit limb.
+
+// ASCII byte codes for the byte-oriented parser (Latin1Iterator returns Int).
+private let ASCII_MINUS = 0x2D, ASCII_PLUS = 0x2B, ASCII_UNDER = 0x5F
+private let ASCII_ZERO = 0x30, ASCII_NINE = 0x39
+private let ASCII_x = 0x78, ASCII_X = 0x58
+private let ASCII_A = 0x41, ASCII_F = 0x46, ASCII_a = 0x61, ASCII_f = 0x66
 
 enum BigIntParsePrint {
 
@@ -238,7 +245,7 @@ enum BigIntParsePrint {
     }
 
     static func tryParseText(_ src: Latin1Iterator, _ mbi: MutableBigInt) -> Bool {
-        let isNeg = src.peek() == "-"
+        let isNeg = src.peek() == ASCII_MINUS
         let bitLen = prefixDetermineBitLen(src)
         if bitLen < 0 { return false }
         if bitLen == 0 { mbi.setZero(); return true }
@@ -253,7 +260,7 @@ enum BigIntParsePrint {
     }
 
     static func tryParseHexText(_ src: Latin1Iterator, _ mbi: MutableBigInt) -> Bool {
-        let sign = src.peek() == "-"
+        let sign = src.peek() == ASCII_MINUS
         let nybbleCount = hexNybbleCount(src)
         if nybbleCount >= 0 {
             if nybbleCount == 0 { mbi.setZero(); return true }
@@ -270,18 +277,18 @@ enum BigIntParsePrint {
     private static func prefixDetermineBitLen(_ src: Latin1Iterator) -> Int {
         var leadingZeroSeen = false
         var ch = src.nextChar()
-        if ch == "-" || ch == "+" { ch = src.nextChar() }
-        if ch == "0" {
+        if ch == ASCII_MINUS || ch == ASCII_PLUS { ch = src.nextChar() }
+        if ch == ASCII_ZERO {
             ch = src.nextChar()
-            if ch == "x" || ch == "X" { return Int.max }
+            if ch == ASCII_x || ch == ASCII_X { return Int.max }
             leadingZeroSeen = true
         }
-        while ch == "0" || ch == "_" {
-            if ch == "_" && !leadingZeroSeen { return -1 }
-            leadingZeroSeen = leadingZeroSeen || (ch == "0")
+        while ch == ASCII_ZERO || ch == ASCII_UNDER {
+            if ch == ASCII_UNDER && !leadingZeroSeen { return -1 }
+            leadingZeroSeen = leadingZeroSeen || (ch == ASCII_ZERO)
             ch = src.nextChar()
         }
-        let remainingLen = src.remainingLen() + (ch == NUL ? 0 : 1)
+        let remainingLen = src.remainingLen() + (ch == CH_EOF ? 0 : 1)
         let roundUp32 = (UInt64(1) << 32) - 1
         let bitLen = Int((UInt64(remainingLen) &* LOG2_10_CEIL_32 &+ roundUp32) >> 32)
         if bitLen == 0 {
@@ -295,22 +302,24 @@ enum BigIntParsePrint {
     private static func parseHelper(_ src: Latin1Iterator, _ z: Magia, _ zLen: Int) -> Bool {
         var accumulator: Limb = 0
         var accumulatorDigitCount = 0
-        var ch: Character = NUL
-        var chLast: Character = NUL
+        var ch = CH_EOF
+        var chLast = CH_EOF
         while true {
             chLast = ch
             ch = src.nextChar()
-            if ch == "_" { continue }
-            if !("0"..."9").contains(ch) { break }
-            let n = ch.code - 0x30
+            if ch == ASCII_UNDER { continue }
+            if ch < ASCII_ZERO || ch > ASCII_NINE { break }
+            let n = ch - ASCII_ZERO
             accumulator = accumulator &* 10 &+ Limb(n)
             accumulatorDigitCount += 1
-            if accumulatorDigitCount < 9 { continue }
-            magia_mutateFmaPow10(z, zLen, 9, accumulator)
+            // 19 digits is the most that fit a 64-bit accumulator (10^19 < 2^64),
+            // halving the per-chunk bignum multiply-add passes vs the old base-1e9.
+            if accumulatorDigitCount < 19 { continue }
+            magia_mutateFmaPow10(z, zLen, 19, accumulator)
             accumulator = 0
             accumulatorDigitCount = 0
         }
-        if ch == NUL && chLast != "_" {
+        if ch == CH_EOF && chLast != ASCII_UNDER {
             if accumulatorDigitCount > 0 {
                 magia_mutateFmaPow10(z, zLen, accumulatorDigitCount, accumulator)
             }
@@ -333,25 +342,25 @@ enum BigIntParsePrint {
     static func hexNybbleCount(_ src: Latin1Iterator) -> Int {
         var leadingZeroSeen = false
         var ch = src.nextChar()
-        if ch == "+" || ch == "-" { ch = src.nextChar() }
-        if ch == "0" {
+        if ch == ASCII_PLUS || ch == ASCII_MINUS { ch = src.nextChar() }
+        if ch == ASCII_ZERO {
             ch = src.nextChar()
-            if ch == "x" || ch == "X" { ch = src.nextChar() }
+            if ch == ASCII_x || ch == ASCII_X { ch = src.nextChar() }
             else { leadingZeroSeen = true }
         }
-        while ch == "0" || ch == "_" {
-            if ch == "_" && !leadingZeroSeen { return -1 }
-            leadingZeroSeen = leadingZeroSeen || (ch == "0")
+        while ch == ASCII_ZERO || ch == ASCII_UNDER {
+            if ch == ASCII_UNDER && !leadingZeroSeen { return -1 }
+            leadingZeroSeen = leadingZeroSeen || (ch == ASCII_ZERO)
             ch = src.nextChar()
         }
-        if ch != NUL { src.prevChar() }
+        if ch != CH_EOF { src.prevChar() }
         var nybbleCount = 0
         while src.hasNext() {
             ch = src.nextChar()
             if !isHexAsciiCharOrUnderscore(ch) { return -1 }
-            nybbleCount += (ch == "_") ? 0 : 1
+            nybbleCount += (ch == ASCII_UNDER) ? 0 : 1
         }
-        if ch == "_" { return -1 }
+        if ch == ASCII_UNDER { return -1 }
         if nybbleCount == 0 {
             if leadingZeroSeen { return 0 }
             return -1
@@ -365,12 +374,12 @@ enum BigIntParsePrint {
             var w = 0
             let stepCount = min(nybblesLeft, 16)
             for n in 0..<stepCount {
-                var ch: Character
-                repeat { ch = src.prevChar() } while ch == "_"
+                var ch: Int
+                repeat { ch = src.prevChar() } while ch == ASCII_UNDER
                 let nybble: Int
-                if ("0"..."9").contains(ch) { nybble = ch.code - 0x30 }
-                else if ("A"..."F").contains(ch) { nybble = ch.code - Character("A").code + 10 }
-                else if ("a"..."f").contains(ch) { nybble = ch.code - Character("a").code + 10 }
+                if ch >= ASCII_ZERO && ch <= ASCII_NINE { nybble = ch - ASCII_ZERO }
+                else if ch >= ASCII_A && ch <= ASCII_F { nybble = ch - ASCII_A + 10 }
+                else if ch >= ASCII_a && ch <= ASCII_f { nybble = ch - ASCII_a + 10 }
                 else { fatalError() }
                 w = w | (nybble << (n << 2))
             }
@@ -379,11 +388,11 @@ enum BigIntParsePrint {
         }
     }
 
-    private static func isHexAsciiCharOrUnderscore(_ c: Character) -> Bool {
+    private static func isHexAsciiCharOrUnderscore(_ c: Int) -> Bool {
         // bit set per valid char: [0-9A-Fa-f_]
         let hexDigitAndUnderscoreMask: Int64 = 0x007E_8000_007E_03FF
-        let idx = c.code - 0x30
-        return idx >= 0 && idx <= (Character("f").code - 0x30)
+        let idx = c - ASCII_ZERO
+        return idx >= 0 && idx <= (ASCII_f - ASCII_ZERO)
             && ((hexDigitAndUnderscoreMask >> idx) & 1) != 0
     }
 }

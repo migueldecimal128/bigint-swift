@@ -107,7 +107,7 @@ func magia_setSqrKaratsuba(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ tmp: Magia
     let tmpSize = 3 * k1 + 3
     verify(z.size >= 2 * xNormLen + 1)
     verify(tmp == nil || tmp!.size >= tmpSize)
-    let t = tmp ?? Magia(tmpSize)
+    let t = tmp ?? Magia.make(tmpSize)
     magia_karatsubaSqr(z, 0, x, 0, xNormLen, t)
     let zLastIndex = 2 * xNormLen - 1
     let zLastLimb = z[zLastIndex]

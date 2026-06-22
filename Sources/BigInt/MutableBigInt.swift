@@ -35,7 +35,7 @@ public final class MutableBigInt: BigIntNumber {
     /// Empty (zero) accumulator.
     public convenience init() {
         biStat(.MBI_CONSTRUCT_EMPTY)
-        let m = Magia(4)
+        let m = Magia.make(4)
         verify(_validateNormLenAndInjectPoison(m, 0))
         self.init(Meta(0), m)
     }
@@ -47,7 +47,7 @@ public final class MutableBigInt: BigIntNumber {
 
     public convenience init(_ sign: Bool, _ dwMag: UInt64) {
         biStat(.MBI_CONSTRUCT_PRIMITIVE)
-        let m = Magia(4)
+        let m = Magia.make(4)
         m[0] = dwMag                                   // a UInt64 is one 64-bit limb
         let normLen: Int32 = dwMag == 0 ? 0 : 1
         verify(_validateNormLenAndInjectPoison(m, Int(normLen)))
@@ -731,7 +731,7 @@ public final class MutableBigInt: BigIntNumber {
             return setAdd(self, lo64)
         }
         let hi64 = unsignedMulHi(dw, dw)        // hi64 != 0 here ⇒ 128-bit = two limbs
-        if tmp1.size < 4 { tmp1 = Magia(4) }
+        if tmp1.size < 4 { tmp1 = Magia.make(4) }
         tmp1[0] = lo64
         tmp1[1] = hi64
         let normLen = magia_normLen(tmp1, 2)

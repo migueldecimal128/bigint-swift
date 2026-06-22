@@ -32,9 +32,9 @@ public struct BigInt: BigIntNumber, Comparable {
 
     nonisolated(unsafe) public static let ZERO = BigInt(Meta(0), MAGIA_ZERO)
     nonisolated(unsafe) public static let ONE = BigInt(Meta(1), MAGIA_ONE)
-    nonisolated(unsafe) public static let TWO = BigInt(Meta(1), Magia(limbs: [2]))
+    nonisolated(unsafe) public static let TWO = BigInt(Meta(1), Magia.make(limbs: [2]))
     nonisolated(unsafe) public static let NEG_ONE = BigInt(Meta(signBit: 1, normLen: 1), MAGIA_ONE)
-    nonisolated(unsafe) public static let TEN = BigInt(Meta(1), Magia(limbs: [10]))
+    nonisolated(unsafe) public static let TEN = BigInt(Meta(1), Magia.make(limbs: [10]))
 
     // MARK: internal normalized/non-normalized factories
 
@@ -103,13 +103,13 @@ public struct BigInt: BigIntNumber, Comparable {
         if n == 0 { return ZERO }
         biStat(.BI_CONSTRUCT_32)
         // n.magnitude (UInt32) handles Int32.min; one 64-bit limb either way
-        return BigInt(Meta(signFlag: n < 0, normLen: 1), Magia(limbs: [Limb(n.magnitude)]))
+        return BigInt(Meta(signFlag: n < 0, normLen: 1), Magia.make(limbs: [Limb(n.magnitude)]))
     }
 
     public static func from(_ w: UInt32) -> BigInt {
         if w != 0 {
             biStat(.BI_CONSTRUCT_32)
-            return BigInt(Meta(signFlag: false, normLen: 1), Magia(limbs: [Limb(w)]))
+            return BigInt(Meta(signFlag: false, normLen: 1), Magia.make(limbs: [Limb(w)]))
         }
         return ZERO
     }
@@ -117,7 +117,7 @@ public struct BigInt: BigIntNumber, Comparable {
     public static func from(_ sign: Bool, _ w: UInt32) -> BigInt {
         if w != 0 {
             biStat(.BI_CONSTRUCT_32)
-            return BigInt(Meta(signFlag: sign, normLen: 1), Magia(limbs: [Limb(w)]))
+            return BigInt(Meta(signFlag: sign, normLen: 1), Magia.make(limbs: [Limb(w)]))
         }
         return ZERO
     }
@@ -129,7 +129,7 @@ public struct BigInt: BigIntNumber, Comparable {
         if dwMagnitude != 0 {
             biStat(.BI_CONSTRUCT_64)
             // a UInt64 magnitude is exactly one 64-bit limb
-            return BigInt(Meta(signFlag: sign, normLen: 1), Magia(limbs: [dwMagnitude]))
+            return BigInt(Meta(signFlag: sign, normLen: 1), Magia.make(limbs: [dwMagnitude]))
         }
         return ZERO
     }
@@ -216,13 +216,13 @@ public struct BigInt: BigIntNumber, Comparable {
     }
     private static func from(_ src: Latin1Iterator) -> BigInt {
         biStat(.BI_CONSTRUCT_TEXT)
-        return fromNonNormalizedOrZero(src.peek() == "-", BigIntParsePrint.from(src))
+        return fromNonNormalizedOrZero(src.peek() == Character("-").code, BigIntParsePrint.from(src))
     }
 
     public static func fromHex(_ str: String) -> BigInt { fromHex(StringLatin1Iterator(str)) }
     private static func fromHex(_ src: Latin1Iterator) -> BigInt {
         biStat(.BI_CONSTRUCT_TEXT)
-        return fromNormalizedOrZero(src.peek() == "-", BigIntParsePrint.fromHex(src))
+        return fromNormalizedOrZero(src.peek() == Character("-").code, BigIntParsePrint.fromHex(src))
     }
 
     // MARK: BigIntNumber
@@ -260,12 +260,12 @@ public struct BigInt: BigIntNumber, Comparable {
         if isNotZero() {
             let normLen = Int(meta.normLen)
             if normLen < KARATSUBA_SQR_THRESHOLD {
-                let z = Magia(2 * normLen)
+                let z = Magia.make(2 * normLen)
                 let zNormLen = magia_setSqr(z, magia, normLen)
                 return BigInt.fromNormalizedNonZero(z, zNormLen)
             }
-            let z = Magia(2 * normLen + 1)
-            let t = Magia(3 * ((normLen + 1) / 2) + 3)
+            let z = Magia.make(2 * normLen + 1)
+            let t = Magia.make(3 * ((normLen + 1) / 2) + 3)
             let zNormLen = magia_setSqrKaratsuba(z, magia, normLen, t)
             return BigInt.fromNormalizedNonZero(z, zNormLen)
         }
@@ -384,7 +384,7 @@ public struct BigInt: BigIntNumber, Comparable {
                 if t != 0 { return BigInt.fromNormalizedNonZero(meta.signFlag, z, zNormLen) }
                 i += 1
             } while i < z.size
-            let z1 = Magia(i + 1)
+            let z1 = Magia.make(i + 1)
             z1[i] = 1
             return BigInt.fromNormalizedNonZero(meta.signFlag, z1, i + 1)
         }
@@ -486,7 +486,7 @@ public struct BigInt: BigIntNumber, Comparable {
     public static func fromLittleEndianIntArray(_ sign: Bool, _ a: [Limb], _ len: Int? = nil) -> BigInt {
         let l = len ?? a.count
         if l >= 0 && l <= a.count {
-            let tmp = Magia(limbs: ContiguousArray(a[0..<l]))
+            let tmp = Magia.make(limbs: ContiguousArray(a[0..<l]))
             let nl = magia_normLen(tmp, l)
             if nl > 0 {
                 biStat(.BI_CONSTRUCT_BINARY_ARRAY)
@@ -520,7 +520,7 @@ public struct BigInt: BigIntNumber, Comparable {
             let thisBitLen = magnitudeBitLen()
             let otherBitLen = other.magnitudeBitLen()
             let zBitLen = Swift.max(thisBitLen, otherBitLen) + 1
-            let z = Magia(magia_limbLenFromBitLen(zBitLen))
+            let z = Magia.make(magia_limbLenFromBitLen(zBitLen))
             let zNormLen: Int
             if thisNormLen >= otherNormLen {
                 magia.copyInto(z, 0, 0, thisNormLen)
@@ -538,7 +538,7 @@ public struct BigInt: BigIntNumber, Comparable {
                 let smallNormLen = cmp > 0 ? otherNormLen : thisNormLen
                 let largeMagia = cmp > 0 ? magia : other.magia
                 let smallMagia = cmp > 0 ? other.magia : magia
-                let z = Magia(largeNormLen)
+                let z = Magia.make(largeNormLen)
                 let zNormLen = magia_setSub(z, largeMagia, largeNormLen, smallMagia, smallNormLen)
                 if zNormLen > 0 {
                     return BigInt.fromNormalizedNonZero(sign, z, zNormLen)
@@ -658,7 +658,7 @@ public struct BigInt: BigIntNumber, Comparable {
         if w == 0 { throwDivByZero() }
         if !isZero() {
             let thisNormLen = Int(meta.normLen)
-            let z = Magia(thisNormLen)
+            let z = Magia.make(thisNormLen)
             let zNormLen = magia_setDivLimb(z, magia, thisNormLen, w)
             if zNormLen > 0 { return BigInt.fromNormalizedNonZero(meta.signFlag != wSign, z, zNormLen) }
         }
@@ -683,7 +683,7 @@ public struct BigInt: BigIntNumber, Comparable {
                 if cmp < 0 { return BigInt.ZERO }
                 if cmp == 0 { return BigInt.ONE }
             }
-            let z = Magia(thisNormLen - otherNormLen + 1)
+            let z = Magia.make(thisNormLen - otherNormLen + 1)
             let zNormLen = magia_setDivKnuth(z, magia, thisNormLen, nil, other.magia, otherNormLen, nil)
             if zNormLen > 0 { return BigInt.fromNormalizedNonZero(meta.signFlag != otherSign, z, zNormLen) }
         }
@@ -718,15 +718,15 @@ public struct BigInt: BigIntNumber, Comparable {
             let cmp = magia_compare(x, xNormLen, y, yNormLen)
             if cmp < 0 && !applyModRingNormalization { return self }
             if cmp < 0 {
-                z = Magia(yNormLen)
+                z = Magia.make(yNormLen)
                 zNormLen = magia_setSub(z, y, yNormLen, x, xNormLen)
                 return BigInt.fromNormalizedNonZero(z, zNormLen)
             }
             if cmp == 0 { return BigInt.ZERO }
-            z = Magia(xNormLen)                            // cmp > 0
+            z = Magia.make(xNormLen)                            // cmp > 0
             zNormLen = magia_setSub(z, x, xNormLen, y, yNormLen)
         } else {
-            z = Magia(yNormLen)
+            z = Magia.make(yNormLen)
             zNormLen = magia_setRem(z, magia, xNormLen, other.magia, yNormLen)
             if zNormLen == 0 { return BigInt.ZERO }
         }

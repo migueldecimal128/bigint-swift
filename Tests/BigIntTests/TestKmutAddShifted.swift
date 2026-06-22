@@ -3,14 +3,14 @@ import Testing
 
 // Faithful transliteration of TestKmutAddShifted.kt — exercises the Magia-level
 // free function `magia_kmutAddShifted`. Kotlin `intArrayOf(...)` (signed) →
-// `Magia(limbs:)` over `Limb` (UInt32); -1 → 0xFFFF_FFFF.
+// `Magia.make(limbs:)` over `Limb` (UInt32); -1 → 0xFFFF_FFFF.
 
 @Suite struct TestKmutAddShifted {
 
     /* ---------- helpers ---------- */
 
     private func magia(_ limbs: [Int64]) -> Magia {
-        Magia(limbs: ContiguousArray(limbs.map { Limb(truncatingIfNeeded: $0) }))
+        Magia.make(limbs: ContiguousArray(limbs.map { Limb(truncatingIfNeeded: $0) }))
     }
 
     private func assertContentEquals(_ expected: [Int64], _ actual: Magia) {

@@ -114,7 +114,7 @@ enum BigIntSerde {
             if remaining == 0 { return isNegative ? MAGIA_ONE : MAGIA_ZERO }
         }
 
-        let magia = Magia((remaining + 7) >> 3)
+        let magia = Magia.make((remaining + 7) >> 3)
         var ib = ibLsb
         var iw = 0
         var carry: DWord = isNegative ? 1 : 0
@@ -148,12 +148,12 @@ enum BigIntSerde {
     }
 
     static func magnitudeToLittleEndianIntArray(_ bi: BigIntNumber) -> [Limb] {
-        Array(bi.magia.a[0..<Int(bi.meta.normLen)])
+        bi.magia.prefixArray(Int(bi.meta.normLen))
     }
 
     static func magnitudeToLittleEndianLongArray(_ bi: BigIntNumber) -> [UInt64] {
         // At 64-bit limbs a limb IS a UInt64, so the old pair-join (two 32-bit
         // limbs per UInt64) collapses to a straight copy of the magnitude limbs.
-        Array(bi.magia.a[0..<Int(bi.meta.normLen)])
+        bi.magia.prefixArray(Int(bi.meta.normLen))
     }
 }

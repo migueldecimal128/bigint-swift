@@ -31,7 +31,7 @@ import Testing
             return z ^ (z >> 31)
         }
         func magia(_ n: Int) -> Magia {
-            let m = Magia(2 * n + 4)
+            let m = Magia.make(2 * n + 4)
             for i in 0..<n { m[i] = Limb(truncatingIfNeeded: next()) }
             if n > 0 && m[n - 1] == 0 { m[n - 1] = 1 }   // keep normalized
             return m
@@ -45,7 +45,7 @@ import Testing
             for n in 1...2 {
                 let x = rng.magia(n)
                 let xv = magiaToU128(x, n)
-                let z = Magia(8)
+                let z = Magia.make(8)
                 let zn = magia_setSqr(z, x, n)
                 #expect(magiaToU128(z, zn) == xv &* xv)
             }
@@ -57,8 +57,8 @@ import Testing
         // covers unrolled (1-4), the 5..<12 mul fallback, and schoolbook (>=12)
         for n in 1...130 {
             let x = rng.magia(n)
-            let z1 = Magia(2 * n + 4)
-            let z2 = Magia(2 * n + 4)
+            let z1 = Magia.make(2 * n + 4)
+            let z2 = Magia.make(2 * n + 4)
             let sn = magia_setSqr(z1, x, n)
             let mn = magia_setMul(z2, x, n, x, n)
             #expect(limbsEqual(z1, sn, z2, mn), "setSqr != setMul at n=\(n)")
@@ -70,8 +70,8 @@ import Testing
         // exercise Karatsuba (threshold 84) including the recursive split
         for n in [84, 85, 100, 127, 170, 256] {
             let x = rng.magia(n)
-            let zK = Magia(2 * n + 4)
-            let zM = Magia(2 * n + 4)
+            let zK = Magia.make(2 * n + 4)
+            let zM = Magia.make(2 * n + 4)
             let kn = magia_setSqrKaratsuba(zK, x, n)
             let mn = magia_setMul(zM, x, n, x, n)
             #expect(limbsEqual(zK, kn, zM, mn), "karatsuba != setMul at n=\(n)")
@@ -82,8 +82,8 @@ import Testing
         let rng = Rng()
         for n in [12, 20, 50, 83] {
             let x = rng.magia(n)
-            let zS = Magia(2 * n + 4)
-            let zM = Magia(2 * n + 4)
+            let zS = Magia.make(2 * n + 4)
+            let zM = Magia.make(2 * n + 4)
             let sn = magia_setSqrSchoolbook(zS, x, n)
             let mn = magia_setMul(zM, x, n, x, n)
             #expect(limbsEqual(zS, sn, zM, mn), "setSqrSchoolbook != setMul at n=\(n)")

@@ -15,7 +15,7 @@ import Testing
         }
         /// Random non-negative BigInt of up to `nLimbs` limbs (top limb may be 0).
         func bigMag(_ nLimbs: Int) -> BigInt {
-            let m = Magia(nLimbs + 1)
+            let m = Magia.make(nLimbs + 1)
             for i in 0..<nLimbs { m[i] = Limb(truncatingIfNeeded: next()) }
             return BigInt.fromNonNormalizedOrZero(false, m)
         }

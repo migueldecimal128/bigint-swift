@@ -5,7 +5,7 @@ import Testing
 
     // Builds a Magia from little-endian limb values (Kotlin's `intArrayOf`).
     private func mag(_ limbs: [Limb]) -> Magia {
-        Magia(limbs: ContiguousArray(limbs))
+        Magia.make(limbs: ContiguousArray(limbs))
     }
 
     // Extracts a little-endian limb slice (faithful to Kotlin's
@@ -18,12 +18,12 @@ import Testing
     }
 
     private func le(_ sign: Bool, _ m: Magia) -> BigInt {
-        BigInt.fromLittleEndianIntArray(sign, Array(m.a))
+        BigInt.fromLittleEndianIntArray(sign, m.prefixArray(m.size))
     }
 
     @Test func square_len1() {
         let a = mag([Limb(0xFFFF_FFFF)])
-        let z = Magia(4)
+        let z = Magia.make(4)
 
         _ = magia_setSqrSchoolbook(z, 0, a, 0, 1)
 
@@ -38,7 +38,7 @@ import Testing
             Limb(0x0123_4567),
             Limb(0x89AB_CDEF)
         ])
-        let z = Magia(8)
+        let z = Magia.make(8)
 
         _ = magia_setSqrSchoolbook(z, 1, a, 0, 2)
 
@@ -49,12 +49,12 @@ import Testing
     }
 
     @Test func square_len3_offsets() {
-        let a = Magia(10)
+        let a = Magia.make(10)
         a[3] = Limb(0xDEAD_BEEF)
         a[4] = Limb(0x1234_5678)
         a[5] = Limb(0xCAFE_BABE)
 
-        let z = Magia(20)
+        let z = Magia.make(20)
 
         _ = magia_setSqrSchoolbook(z, 7, a, 3, 3)
 
@@ -66,9 +66,9 @@ import Testing
 
     @Test func square_allOnes_carryStress() {
         let n = 8
-        let a = Magia(n)
+        let a = Magia.make(n)
         for i in 0..<n { a[i] = Limb(0xFFFF_FFFF) }
-        let z = Magia(16)
+        let z = Magia.make(16)
 
         _ = magia_setSqrSchoolbook(z, 0, a, 0, n)
 
@@ -86,7 +86,7 @@ import Testing
             Limb(0x3333_3333),
             Limb(0x4444_4444)
         ])
-        let z = Magia(12)
+        let z = Magia.make(12)
 
         _ = magia_setSqrSchoolbook(z, 2, a, 0, 4)
 
@@ -101,14 +101,14 @@ import Testing
             let bi = BigInt.randomWithBitLen(2048)
             let ax = bi.magnitudeToLittleEndianIntArray()
             if ax.count < 1 { continue }
-            let a = Magia(ax.count + 10)
+            let a = Magia.make(ax.count + 10)
             for i in 0..<a.size { a[i] = Limb(0xDEAD) }
             let aOff = Int(BigIntRandom.Default.nextInt(Int32(10)))
             let aNormLen = ax.count
             for i in 0..<aNormLen { a[aOff + i] = ax[i] }
 
             let zLen = 2 * aNormLen
-            let z = Magia(zLen + 10)
+            let z = Magia.make(zLen + 10)
             for i in 0..<z.size { z[i] = Limb(0xFFFF) }
             let zOff = Int(BigIntRandom.Default.nextInt(Int32(10)))
 
@@ -125,7 +125,7 @@ import Testing
     @Test func square_FFFF() {
         let a = mag([Limb(0xFFFF_FFFF), Limb(0xFFFF_FFFF), Limb(0xFFFF_FFFF), Limb(0xFFFF_FFFF)])
 
-        let z = Magia(2 * a.size)
+        let z = Magia.make(2 * a.size)
 
         _ = magia_setSqrSchoolbook(z, 0, a, 0, a.size)
 

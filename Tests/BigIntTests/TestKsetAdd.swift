@@ -15,7 +15,7 @@ import Testing
     private func magia(_ vals: [Int32]) -> Magia {
         var limbs = ContiguousArray<Limb>()
         for v in vals { limbs.append(Limb(bitPattern: Int64(v))) }
-        return Magia(limbs: limbs)
+        return Magia.make(limbs: limbs)
     }
 
     // Compare a Magia's limbs (over its full size) against expected signed Ints.
@@ -29,7 +29,7 @@ import Testing
 
     @Test func testStandardAdditionNoCarry() {
         let a = magia([1, 2, 3, 4]) // x0=[1,2], x1=[3,4]
-        let t = Magia(3)
+        let t = Magia.make(3)
 
         // k0=2, k1=2 (even split)
         magia_ksetAdd(t, a, 0, 2, 2)
@@ -40,7 +40,7 @@ import Testing
 
     @Test func testAdditionWithCarryPropagatingToEnd() {
         let a = magia([-1, -1, 1, 0]) // -1 is 0xFFFFFFFF in bits
-        let t = Magia(3)
+        let t = Magia.make(3)
 
         magia_ksetAdd(t, a, 0, 2, 2)
 
@@ -54,7 +54,7 @@ import Testing
         // x0 = [1, 2] (k0=2)
         // x1 = [10, 20, 30] (k1=3)
         let a = magia([1, 2, 10, 20, 30])
-        let t = Magia(4)
+        let t = Magia.make(4)
 
         magia_ksetAdd(t, a, 0, 2, 3)
 
@@ -67,7 +67,7 @@ import Testing
 
     @Test func testOffsetAddition() {
         let a = magia([0, 0, 5, 5, 10, 10, 0])
-        let t = Magia(3)
+        let t = Magia.make(3)
 
         // Start at index 2
         magia_ksetAdd(t, a, 2, 2, 2)

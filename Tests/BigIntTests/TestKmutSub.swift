@@ -2,7 +2,7 @@ import Testing
 @testable import BigInt
 
 // Faithful transliteration of TestKmutSub.kt — exercises the Magia-level free
-// function `magia_kmutSub`. Kotlin `intArrayOf(...)` (signed) → `Magia(limbs:)`
+// function `magia_kmutSub`. Kotlin `intArrayOf(...)` (signed) → `Magia.make(limbs:)`
 // over `Limb` (UInt32); negative limb literals are reinterpreted bit-for-bit
 // (e.g. -1 → 0xFFFF_FFFF). `assertContentEquals(intArrayOf(...), t)` → a
 // limb-by-limb `#expect`.
@@ -12,7 +12,7 @@ import Testing
     /* ---------- helpers ---------- */
 
     private func magia(_ limbs: [Int64]) -> Magia {
-        Magia(limbs: ContiguousArray(limbs.map { Limb(truncatingIfNeeded: $0) }))
+        Magia.make(limbs: ContiguousArray(limbs.map { Limb(truncatingIfNeeded: $0) }))
     }
 
     private func assertContentEquals(_ expected: [Int64], _ actual: Magia) {

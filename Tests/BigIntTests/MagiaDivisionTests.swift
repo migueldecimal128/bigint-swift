@@ -9,7 +9,7 @@ import Testing
 
     // up-to-2-limb (128-bit) magia <-> UInt128
     private func magiaU128(_ v: UInt128) -> (Magia, Int) {
-        let m = Magia(8)
+        let m = Magia.make(8)
         var n = 0
         for i in 0..<2 {
             let limb = Limb(truncatingIfNeeded: v >> (i * 64))
@@ -30,7 +30,7 @@ import Testing
     private func engDiv(_ a: UInt128, _ b: UInt128) -> UInt128 {
         let (x, xn) = magiaU128(a)
         let (y, yn) = magiaU128(b)
-        let z = Magia(8)
+        let z = Magia.make(8)
         let fast = magia_trySetDivFastPath(z, x, xn, y, yn)
         let qn = fast >= 0 ? fast : magia_setDivKnuth(z, x, xn, nil, y, yn, nil)
         return magiaToU128(z, qn)
@@ -39,7 +39,7 @@ import Testing
     private func engRem(_ a: UInt128, _ b: UInt128) -> UInt128 {
         let (x, xn) = magiaU128(a)
         let (y, yn) = magiaU128(b)
-        let z = Magia(8)
+        let z = Magia.make(8)
         let rn = magia_setRem(z, x, xn, y, yn)
         return magiaToU128(z, rn)
     }

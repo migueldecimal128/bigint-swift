@@ -11,7 +11,7 @@ import Testing
         if v == 0 { return BigInt.ZERO }
         let neg = v < 0
         let mag = v.magnitude
-        let m = Magia(5)
+        let m = Magia.make(5)
         for i in 0..<2 { m[i] = Limb(truncatingIfNeeded: mag >> (i * 64)) }
         return BigInt.fromNonNormalizedOrZero(neg, m)
     }

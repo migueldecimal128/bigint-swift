@@ -13,7 +13,7 @@ import Testing
     }
 
     private func fill(_ n: Int) -> Magia {
-        let a = Magia(n)
+        let a = Magia.make(n)
         let golden = Int32(bitPattern: 0x9E37_79B9)
         for i in 0..<n {
             a[i] = Limb(bitPattern: Int64(truncatingIfNeeded: (i + 1) &* Int(golden)))
@@ -26,11 +26,11 @@ import Testing
         var n = 64
         while n <= 96 {
             let a = fill(n)
-            let z = Magia(2 * n + 1)
+            let z = Magia.make(2 * n + 1)
             let k1 = (n + 1) / 2
-            let t = Magia(3 * k1 + 3)
+            let t = Magia.make(3 * k1 + 3)
 
-            let ref = Magia(2 * n + 1)
+            let ref = Magia.make(2 * n + 1)
             let refLen = magia_setMul(ref, a, n, a, n)
 
             z.fill(0, 0, z.size)

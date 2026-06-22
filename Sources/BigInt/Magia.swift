@@ -13,10 +13,11 @@
 // in place. Swift has no signed-Int-as-unsigned idiom worth keeping, so:
 //
 //   * limbs are native `UInt64` (`Limb`);
-//   * `Magia` is a `final class` wrapping `ContiguousArray<Limb>` — reference
-//     semantics give us in-place mutation through a passed reference AND O(1)
-//     read-only sharing, exactly like Kotlin's `IntArray`. Aliased operands
-//     (`z === x`) work because they are the same object.
+//   * `Magia` is a `ManagedBuffer<Int, Limb>` subclass — a single heap object
+//     with the limb count in the header and the limbs stored INLINE after it,
+//     the faithful Swift analogue of a JVM `int[]` / Kotlin `IntArray` (one
+//     allocation, reference semantics). In-place mutation through a passed
+//     reference and aliasing (`z === x`) work because they are the same object.
 //
 // TRANSLITERATION CHEAT-SHEET (Kotlin → Swift), see PORTING_CONVENTIONS.md:
 //   x[i].toDws()  →  x[i].toDw()       (Limb → DWord/UInt128, zero-extended)
@@ -37,61 +38,78 @@ public typealias Limb = UInt64
 /// Double-width-of-limb accumulator type (`limb × limb` is 128-bit).
 typealias DWord = UInt128
 
-/// `Magia` == MAGnitude array. Reference-type little-endian 64-bit limb buffer.
-/// Public as a *type* only (it appears in the public `BigIntNumber.magia`
-/// requirement); its members stay internal, so it is opaque to consumers.
-public final class Magia {
-    var a: ContiguousArray<Limb>
+/// `Magia` == MAGnitude array: a little-endian 64-bit limb buffer, backed by
+/// `ManagedBuffer` so the limb count (header) and the limbs (inline tail) live
+/// in one heap object — the Swift analogue of a JVM `int[]` (one allocation,
+/// reference semantics). Public as a *type* only (it appears in the public
+/// `BigIntNumber.magia` requirement); its members stay internal, so it is opaque
+/// to consumers. Constructed via `Magia.make(...)` (a `ManagedBuffer` subclass
+/// has no accessible allocating `init`).
+public final class Magia: ManagedBuffer<Int, Limb> {
 
-    init(_ size: Int) {
-        a = ContiguousArray(repeating: 0, count: size)
+    /// Number of allocated limbs (Kotlin `IntArray.size`). Magia never resizes.
+    @inline(__always) var size: Int { header }
+
+    /// Allocate `size` zeroed limbs.
+    static func make(_ size: Int) -> Magia {
+        let m = Magia.create(minimumCapacity: Swift.max(size, 1)) { _ in size }
+        m.withUnsafeMutablePointerToElements { $0.initialize(repeating: 0, count: size) }
+        return unsafeDowncast(m, to: Magia.self)
     }
 
-    init(limbs: ContiguousArray<Limb>) {
-        a = limbs
+    /// Allocate from existing limbs.
+    static func make(limbs: ContiguousArray<Limb>) -> Magia {
+        let n = limbs.count
+        let m = Magia.create(minimumCapacity: Swift.max(n, 1)) { _ in n }
+        m.withUnsafeMutablePointerToElements { p in
+            for i in 0..<n { (p + i).initialize(to: limbs[i]) }
+        }
+        return unsafeDowncast(m, to: Magia.self)
     }
-
-    /// Number of allocated limbs (Kotlin `IntArray.size`) — capacity, not the
-    /// logical normalized length.
-    var size: Int { a.count }
 
     @inline(__always)
     subscript(_ i: Int) -> Limb {
-        get { a[i] }
-        set { a[i] = newValue }
+        get { withUnsafeMutablePointerToElements { $0[i] } }
+        set { withUnsafeMutablePointerToElements { $0[i] = newValue } }
     }
 
     /// Kotlin `this.copyInto(dst, destOff, start, end)`.
     func copyInto(_ dst: Magia, _ destOff: Int, _ start: Int, _ end: Int) {
-        var d = destOff
-        var s = start
-        while s < end {
-            dst.a[d] = a[s]
-            d += 1
-            s += 1
+        withUnsafeMutablePointerToElements { src in
+            dst.withUnsafeMutablePointerToElements { d in
+                var di = destOff, s = start
+                while s < end { d[di] = src[s]; di += 1; s += 1 }
+            }
         }
     }
 
-    /// Kotlin `IntArray.copyOf(newSize)`: copy min(newSize, count) limbs into a
-    /// fresh array of `newSize`, zero-padding (or truncating) as needed.
+    /// Kotlin `IntArray.copyOf(newSize)`: copy min(newSize, size) limbs into a
+    /// fresh, zeroed Magia of `newSize`.
     func copyOf(_ newSize: Int) -> Magia {
-        let dst = Magia(newSize)
-        let m = Swift.min(newSize, a.count)
-        var i = 0
-        while i < m { dst.a[i] = a[i]; i += 1 }
+        let dst = Magia.make(newSize)
+        let mn = Swift.min(newSize, size)
+        withUnsafeMutablePointerToElements { src in
+            dst.withUnsafeMutablePointerToElements { d in
+                for i in 0..<mn { d[i] = src[i] }
+            }
+        }
         return dst
     }
 
     /// Kotlin `IntArray.copyOf()` — full-length copy.
-    func copyOf() -> Magia { copyOf(a.count) }
+    func copyOf() -> Magia { copyOf(size) }
 
     /// Kotlin `IntArray.fill(value, fromIndex, toIndex)`.
     func fill(_ value: Limb, _ fromIndex: Int, _ toIndex: Int) {
-        var i = fromIndex
-        while i < toIndex {
-            a[i] = value
-            i += 1
+        withUnsafeMutablePointerToElements { p in
+            var i = fromIndex
+            while i < toIndex { p[i] = value; i += 1 }
         }
+    }
+
+    /// Replacement for the old `.a[0..<n]` slice access (serde).
+    func prefixArray(_ n: Int) -> [Limb] {
+        withUnsafeMutablePointerToElements { Array(UnsafeBufferPointer(start: $0, count: n)) }
     }
 }
 
@@ -103,11 +121,11 @@ let MASK32: UInt64 = 0xFFFF_FFFF
 
 /// The one true zero-length array, usually used to represent ZERO.
 /// `nonisolated(unsafe)`: a shared, never-mutated singleton (size 0).
-nonisolated(unsafe) let MAGIA_ZERO = Magia(0)
+nonisolated(unsafe) let MAGIA_ZERO = Magia.make(0)
 
 /// The value ONE.  **WARNING** do NOT mutate this.
 /// `nonisolated(unsafe)`: shared singleton, must not be mutated (as in Kotlin).
-nonisolated(unsafe) let MAGIA_ONE = Magia(limbs: [1])
+nonisolated(unsafe) let MAGIA_ONE = Magia.make(limbs: [1])
 
 /// Returns the 64-bit limb `n` zero-extended to a double-width `DWord`.
 @inline(__always) func magia_dw32(_ n: Limb) -> DWord { DWord(n) }
@@ -213,7 +231,7 @@ func magia_isNormalized(_ x: Magia, _ xOff: Int, _ xLen: Int) -> Bool {
 
 func magia_newWithBitLen(_ bitLen: Int) -> Magia {
     if bitLen >= 1 && bitLen <= MAX_ALLOC_SIZE * 64 {
-        return Magia(magia_limbLenFromBitLen(bitLen))
+        return Magia.make(magia_limbLenFromBitLen(bitLen))
     }
     if bitLen == 0 {
         return MAGIA_ZERO
@@ -222,7 +240,7 @@ func magia_newWithBitLen(_ bitLen: Int) -> Magia {
 }
 
 func magia_newWithFloorLen(_ floorLen: Int) -> Magia {
-    Magia(magia_calcHeapLimbQuantum(floorLen))
+    Magia.make(magia_calcHeapLimbQuantum(floorLen))
 }
 
 /// Allocation size ≥ max(4, floorLen) rounded up to a multiple of 4.
@@ -242,7 +260,7 @@ func magia_newCopyWithExactBitLen(_ x: Magia, _ xLen: Int, _ exactBitLen: Int) -
 
 func magia_newCopyWithExactLimbLen(_ x: Magia, _ xLen: Int, _ exactLimbLen: Int) -> Magia {
     if exactLimbLen >= 1 && exactLimbLen <= MAX_ALLOC_SIZE {
-        let dst = Magia(exactLimbLen)
+        let dst = Magia.make(exactLimbLen)
         x.copyInto(dst, 0, 0, min(xLen, dst.size))
         return dst
     }
@@ -517,15 +535,18 @@ func magia_setMulSchoolbook(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ y: Magia,
     throwBoundsCheckViolation()
 }
 
-/// Powers of 10 from 10⁰ through 10⁹, for fast small-power decimal scaling.
+/// Powers of 10 from 10⁰ through 10¹⁹, for fast small-power decimal scaling.
+/// 10¹⁹ is the largest power of ten that fits a 64-bit limb (< 2⁶⁴).
 private let POW10: [UInt64] = [
-    1, 10, 100, 1000, 10000, 100000, 1000000,
-    10000000, 100000000, 1000000000
+    1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000, 1_000_000_000,
+    10_000_000_000, 100_000_000_000, 1_000_000_000_000, 10_000_000_000_000, 100_000_000_000_000,
+    1_000_000_000_000_000, 10_000_000_000_000_000, 100_000_000_000_000_000,
+    1_000_000_000_000_000_000, 10_000_000_000_000_000_000
 ]
 
-/// In-place fused multiply-add: `x = x * 10^pow10 + a`, pow10 in 0..9.
+/// In-place fused multiply-add: `x = x * 10^pow10 + a`, pow10 in 0..19.
 func magia_mutateFmaPow10(_ x: Magia, _ xLen: Int, _ pow10: Int, _ a: Limb) {
-    if pow10 >= 0 && pow10 <= 9 {
+    if pow10 >= 0 && pow10 <= 19 {
         let m = POW10[pow10]
         var carry: Limb = a
         for i in 0..<xLen {
@@ -990,7 +1011,7 @@ func magia_knuthDivide(_ q: Magia?, _ r: Magia?, _ u: Magia, _ v: Magia, _ m: In
     } else if let r, r.size >= m + 1, r !== v {
         un = r
     } else {
-        un = Magia(m + 1)
+        un = Magia.make(m + 1)
     }
     u.copyInto(un, 0, 0, m)
     un[m] = 0
@@ -999,7 +1020,7 @@ func magia_knuthDivide(_ q: Magia?, _ r: Magia?, _ u: Magia, _ v: Magia, _ m: In
         if vnBuf.size < n { fatalError() }
         vn = vnBuf
     } else {
-        vn = Magia(n)
+        vn = Magia.make(n)
     }
     v.copyInto(vn, 0, 0, n)
 

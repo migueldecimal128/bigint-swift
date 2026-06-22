@@ -18,7 +18,7 @@ import Testing
     }
 
     private func randomBig(_ n: Int, _ rng: Rng) -> BigInt {
-        let m = Magia(n + 1)
+        let m = Magia.make(n + 1)
         for i in 0..<n { m[i] = Limb(truncatingIfNeeded: rng.next()) }
         if n > 0 && m[n - 1] == 0 { m[n - 1] = 1 }
         let neg = rng.next() & 1 == 1

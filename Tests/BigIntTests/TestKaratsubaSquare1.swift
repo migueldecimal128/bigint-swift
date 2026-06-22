@@ -7,10 +7,10 @@ import Testing
         let n = Int(a.meta.normLen)
         precondition(n >= 2)
 
-        let z = Magia(2 * n + 2)
+        let z = Magia.make(2 * n + 2)
         let k0 = n / 2
         let k1 = n - k0
-        let t = Magia(3 * k1 + 3)
+        let t = Magia.make(3 * k1 + 3)
 
         magia_karatsubaSqr(
             z, 0,
@@ -22,7 +22,7 @@ import Testing
 
         let got = BigInt.fromLittleEndianIntArray(
             false,   // non-negative
-            Array(z.a),
+            z.prefixArray(z.size),
             zLen
         )
         let expect = a * a

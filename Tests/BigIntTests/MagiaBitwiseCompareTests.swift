@@ -4,11 +4,11 @@ import Testing
 @Suite struct MagiaBitwiseCompareTests {
 
     private func u64(_ v: UInt64) -> Magia {
-        let m = Magia(8); _ = magia_setULong(m, v); return m
+        let m = Magia.make(8); _ = magia_setULong(m, v); return m
     }
     // genuine two-limb (128-bit) magnitude: lo + hi·2^64
     private func twoLimb(_ lo: UInt64, _ hi: UInt64) -> Magia {
-        let m = Magia(8); m[0] = lo; m[1] = hi; return m
+        let m = Magia.make(8); m[0] = lo; m[1] = hi; return m
     }
 
     // The magnitude-only engine kernels (magia_setAnd/setOr/setXor) were removed

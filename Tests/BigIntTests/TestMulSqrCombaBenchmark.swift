@@ -14,7 +14,7 @@ import Testing
     }
 
     private func fill(_ n: Int, _ golden32: UInt32) -> Magia {
-        let a = Magia(n)
+        let a = Magia.make(n)
         let golden = Int32(bitPattern: golden32)
         for i in 0..<n {
             a[i] = Limb(bitPattern: Int64(truncatingIfNeeded: (i + 1) &* Int(golden)))
@@ -26,9 +26,9 @@ import Testing
     @Test func testSqrBenchmark() {
         for n in 2...24 {
             let a = fill(n, 0x9E37_79B9)
-            let z = Magia(2 * n)
+            let z = Magia.make(2 * n)
 
-            let ref = Magia(2 * n)
+            let ref = Magia.make(2 * n)
             let refLen = magia_setMul(ref, a, n, a, n)
 
             let sn = magia_setSqrSchoolbook(z, a, n)
@@ -44,9 +44,9 @@ import Testing
             for m in 5...10 {
                 let a = fill(n, 0x9E37_79B9)
                 let b = fill(m, 0x6A09_E667)
-                let z = Magia(m + n)
+                let z = Magia.make(m + n)
 
-                let ref = Magia(m + n)
+                let ref = Magia.make(m + n)
                 let refLen = magia_setMul(ref, a, n, b, m)
 
                 let sn = magia_setMulSchoolbook(z, a, n, b, m)

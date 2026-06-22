@@ -7,7 +7,7 @@ import Testing
     private func mag(_ limbs: [Int32]) -> Magia {
         var a = ContiguousArray<Limb>()
         for v in limbs { a.append(Limb(bitPattern: Int64(v))) }
-        return Magia(limbs: a)
+        return Magia.make(limbs: a)
     }
 
     private func contentEquals(_ a: Magia, _ b: Magia) -> Bool {
@@ -19,12 +19,12 @@ import Testing
     // Helper to verify results against a simpler schoolbook implementation.
     private func verifySquare(_ a: Magia) {
         let n = a.size
-        let zKaratsuba = Magia(2 * n + 1)
-        let zSchoolbook = Magia(2 * n + 1)
+        let zKaratsuba = Magia.make(2 * n + 1)
+        let zSchoolbook = Magia.make(2 * n + 1)
 
         // Workspace size based on the formula: 3 * k1 + 3
         let k1 = n - (n / 2)
-        let t = Magia(3 * k1 + 3)
+        let t = Magia.make(3 * k1 + 3)
 
         // 1. Run Karatsuba
         magia_karatsubaSqr(zKaratsuba, 0, a, 0, n, t)
@@ -63,20 +63,20 @@ import Testing
 
     @Test func testCarryPropagation() {
         for i in 2..<20 {
-            let a = Magia(i)
+            let a = Magia.make(i)
             for j in 0..<i { a[j] = Limb(bitPattern: -1) }
             verifySquare(a)
         }
     }
 
     @Test func testCarryPropagationX() {
-        let a = Magia(4)
+        let a = Magia.make(4)
         for j in 0..<4 { a[j] = Limb(bitPattern: -1) }
         verifySquare(a)
     }
 
     @Test func testZeroValues() {
-        verifySquare(Magia(2))
+        verifySquare(Magia.make(2))
     }
 
     @Test func testTwo() {
@@ -85,13 +85,13 @@ import Testing
 
     @Test func testOffsetHandling() {
         let a = mag([0, 0, 1, 2, 3, 4, 0])
-        let z = Magia(12)
-        let t = Magia(3 * 2 + 3)
+        let z = Magia.make(12)
+        let t = Magia.make(3 * 2 + 3)
 
         // Square the middle 4 elements [1, 2, 3, 4] into z starting at index 2
         magia_karatsubaSqr(z, 2, a, 2, 4, t)
 
-        let expectedResult = Magia(8)
+        let expectedResult = Magia.make(8)
         _ = magia_setSqrSchoolbook(expectedResult, 0, mag([1, 2, 3, 4]), 0, 4)
 
         // Verify z[2..9] matches the expected square
