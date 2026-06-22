@@ -764,6 +764,14 @@ extension BigInt: Hashable {
     }
 }
 
+// ExpressibleByIntegerLiteral: allow `let x: BigInt = 5`. Literals are limited to
+// the platform `Int` range (64-bit here); larger magnitudes use from(String).
+extension BigInt: ExpressibleByIntegerLiteral {
+    public init(integerLiteral value: Int) {
+        self = BigInt.from(Int64(value))
+    }
+}
+
 // ============================================================================
 // DEFERRED from BigInt.kt: from(CharSequence/CharArray/ByteArray) parse
 // overloads (minor; String done). from(Double)/fromULongShiftLeft, the random

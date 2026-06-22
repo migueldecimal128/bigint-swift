@@ -13,10 +13,8 @@ import Testing
         let m = MutableBigInt(); m += l; return m
     }
 
-    private func assertAccEquals(_ expected: Int64, _ mbi: MutableBigInt) {
-        #expect(mbi.toBigInt() == BigInt.from(expected))
-    }
-
+    // Integer literals bind to BigInt via ExpressibleByIntegerLiteral; BigInt
+    // expecteds (the multi-limb cases) pass straight through.
     private func assertAccEquals(_ expected: BigInt, _ mbi: MutableBigInt) {
         #expect(mbi.toBigInt() == expected)
     }
