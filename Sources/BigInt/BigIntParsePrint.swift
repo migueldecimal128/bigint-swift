@@ -2,9 +2,10 @@
 //
 // Port of BigIntParsePrint.kt — decimal/hex parse and print. Kotlin `object` →
 // Swift caseless `enum`. ByteArray → [UInt8]; print buffers are mutated via
-// `inout [UInt8]`. Decimal PARSE chunks base 1e19 (19 digits/chunk — the most
-// that fit a 64-bit limb); PRINT still chunks base 1e9 and its per-limb 1e9
-// long-division uses DWord (UInt128). Hex uses 16 nybbles per 64-bit limb.
+// `inout [UInt8]`. Both decimal PARSE and PRINT chunk base 1e19 (19 digits/chunk
+// — the most that fit a 64-bit limb); the per-limb print division by 1e19 uses
+// the Granlund-Montgomery reciprocal-multiply (udiv1e19_recipMul, no real
+// divide). Hex uses 16 nybbles per 64-bit limb.
 
 // ASCII byte codes for the byte-oriented parser (Latin1Iterator returns Int).
 private let ASCII_MINUS = 0x2D, ASCII_PLUS = 0x2B, ASCII_UNDER = 0x5F
@@ -17,6 +18,10 @@ enum BigIntParsePrint {
     // MARK: constants
     private static let ONE_E_9: UInt64 = 1_000_000_000
     private static let ONE_E_19: UInt64 = 10_000_000_000_000_000_000   // 10^19 (< 2^64)
+    /// Granlund-Montgomery reciprocal of 1e19: floor((2^128-1)/1e19) - 2^64.
+    /// 1e19 is already normalized (0x8AC7230489E80000, bit 63 set). Computed once.
+    private static let RECIP_1E19: UInt64 =
+        UInt64(truncatingIfNeeded: (UInt128.max / UInt128(ONE_E_19)) - (UInt128(1) << 64))
 
     private static let M_U32_DIV_1E1: UInt64 = 0xCCCC_CCCD
     private static let S_U32_DIV_1E1 = 35
@@ -175,20 +180,40 @@ enum BigIntParsePrint {
         }
     }
 
+    /// Granlund-Montgomery / Moller 2-by-1 division: divides `(high: u1, low: u0)`
+    /// by the normalized invariant `d` using its precomputed reciprocal
+    /// `v = floor((2^128-1)/d) - 2^64`. Requires `u1 < d`. ~2 multiplies, no divide
+    /// -- far cheaper than an emulated 128/64 divide on arm64.
+    /// Differential-tested against `UInt64.dividingFullWidth` (see TestUdivPreinv).
+    @inline(__always)
+    static func udiv1e19_recipMul(_ u1: UInt64, _ u0: UInt64, _ d: UInt64, _ v: UInt64) -> (q: UInt64, r: UInt64) {
+        var (qh, ql) = u1.multipliedFullWidth(by: v)          // (qh:ql) = u1 * v
+        let (sumLo, carry) = ql.addingReportingOverflow(u0)   // (qh:ql) += (u1:u0)
+        ql = sumLo
+        qh = qh &+ (u1 &+ 1) &+ (carry ? 1 : 0)
+        var r = u0 &- qh &* d                                  // r = u0 - qh*d
+        let mask: UInt64 = r > ql ? ~0 : 0                     // correction 1
+        qh = qh &+ mask                                        // mask == ~0 (-1) -> qh -= 1
+        r = r &+ (mask & d)
+        if r >= d { r = r &- d; qh = qh &+ 1 }                // correction 2 (rare)
+        return (qh, r)
+    }
+
     /// In-place division by 1e19. Returns (newLen, remainder); `remainder` is the
     /// low 19 decimal digits (up to 1e19-1, needs the full UInt64 — hence a tuple
     /// rather than the old `(newLen<<32)|rem32` packing of the base-1e9 version).
     ///
-    /// Per limb the partial dividend is `(high: rem, low: limb)` with `rem < 1e19`,
-    /// so the quotient fits 64 bits and `UInt64.dividingFullWidth` gives quotient
-    /// AND remainder in one 128/64->64 divide. Base 1e19 (the largest power of ten
-    /// in a 64-bit limb) halves the number of divide passes vs base 1e9.
+    /// Each per-limb 2-by-1 step `(high: rem, low: limb) / 1e19` (rem < 1e19) uses
+    /// the Granlund-Montgomery reciprocal-multiply (`udiv1e19_recipMul`) instead of a
+    /// hardware/emulated divide. Base 1e19 (largest power of ten in a 64-bit limb)
+    /// also halves the divide passes vs base 1e9.
     static func mutateDivBy1e19(_ magia: Magia, _ len: Int) -> (newLen: Int, rem: UInt64) {
         var rem: UInt64 = 0
         precondition(magia[len - 1] != 0)
+        let d = ONE_E_19, v = RECIP_1E19
         var i = len - 1
         while i >= 0 {
-            let (q, r) = ONE_E_19.dividingFullWidth((high: rem, low: magia[i]))
+            let (q, r) = udiv1e19_recipMul(rem, magia[i], d, v)
             magia[i] = q
             rem = r
             i -= 1
