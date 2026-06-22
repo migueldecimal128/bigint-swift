@@ -16,6 +16,7 @@ enum BigIntParsePrint {
 
     // MARK: constants
     private static let ONE_E_9: UInt64 = 1_000_000_000
+    private static let ONE_E_19: UInt64 = 10_000_000_000_000_000_000   // 10^19 (< 2^64)
 
     private static let M_U32_DIV_1E1: UInt64 = 0xCCCC_CCCD
     private static let S_U32_DIV_1E1 = 35
@@ -75,11 +76,10 @@ enum BigIntParsePrint {
             var ib = ibMaxx
             var limbsRemaining = tmpLen
             while limbsRemaining > 1 {
-                let newLenAndRemainder = mutateDivBy1e9(tmp, limbsRemaining)
-                let chunk = newLenAndRemainder & MASK32
-                render9DigitsBeforeIndex(chunk, &utf8, ib)
-                limbsRemaining = Int(newLenAndRemainder >> 32)
-                ib -= 9
+                let (newLen, rem) = mutateDivBy1e19(tmp, limbsRemaining)
+                render19DigitsBeforeIndex(rem, &utf8, ib)
+                limbsRemaining = newLen
+                ib -= 19
             }
             ib -= renderTailDigitsBeforeIndex(tmp[0], &utf8, ib)
             if isNegative {
@@ -158,26 +158,43 @@ enum BigIntParsePrint {
         }
     }
 
-    /// In-place division by 1e9. Returns (newLen<<32) | remainder.
+    /// Renders `dw` (< 1e19) as exactly 19 zero-padded decimal bytes ending at
+    /// `offMaxx`, composed from the 9-digit renderer plus one leading digit
+    /// (top + mid + lo = 1 + 9 + 9). The constant divisors lower to magic-multiplies.
+    static func render19DigitsBeforeIndex(_ dw: UInt64, _ utf8: inout [UInt8], _ offMaxx: Int) {
+        verify(dw < ONE_E_19)
+        let lo  = dw % 1_000_000_000
+        let mid = (dw / 1_000_000_000) % 1_000_000_000
+        let top = dw / 1_000_000_000_000_000_000          // single digit 0...9
+        render9DigitsBeforeIndex(lo, &utf8, offMaxx)
+        render9DigitsBeforeIndex(mid, &utf8, offMaxx - 9)
+        if offMaxx - 19 >= 0 {
+            utf8[offMaxx - 19] = digitByte(top)
+        } else {
+            fatalError()
+        }
+    }
+
+    /// In-place division by 1e19. Returns (newLen, remainder); `remainder` is the
+    /// low 19 decimal digits (up to 1e19-1, needs the full UInt64 — hence a tuple
+    /// rather than the old `(newLen<<32)|rem32` packing of the base-1e9 version).
     ///
-    /// At 64-bit limbs the per-limb partial dividend `combined = rem*2^64 + limb`
-    /// is a 128-bit value (rem < 1e9, so combined < 2^94), divided by 1e9 with
-    /// native UInt128 `/` and `%`. (The old 2^64-reciprocal Barrett trick only
-    /// applied when `combined` fit in 64 bits, i.e. 32-bit limbs.)
-    static func mutateDivBy1e9(_ magia: Magia, _ len: Int) -> UInt64 {
+    /// Per limb the partial dividend is `(high: rem, low: limb)` with `rem < 1e19`,
+    /// so the quotient fits 64 bits and `UInt64.dividingFullWidth` gives quotient
+    /// AND remainder in one 128/64->64 divide. Base 1e19 (the largest power of ten
+    /// in a 64-bit limb) halves the number of divide passes vs base 1e9.
+    static func mutateDivBy1e19(_ magia: Magia, _ len: Int) -> (newLen: Int, rem: UInt64) {
         var rem: UInt64 = 0
         precondition(magia[len - 1] != 0)
-        let divisor = DWord(ONE_E_9)
         var i = len - 1
         while i >= 0 {
-            let combined = (DWord(rem) << 64) | magia[i].toDw()
-            magia[i] = (combined / divisor).toLimb()
-            rem = (combined % divisor).toLimb()
+            let (q, r) = ONE_E_19.dividingFullWidth((high: rem, low: magia[i]))
+            magia[i] = q
+            rem = r
             i -= 1
         }
         let mostSignificantLimbNonZero = magia[len - 1] != 0 ? 1 : 0
-        let newLen = len - 1 + mostSignificantLimbNonZero
-        return (UInt64(newLen) << 32) | (rem & MASK32)
+        return (len - 1 + mostSignificantLimbNonZero, rem)
     }
 
     // MARK: toHexString
