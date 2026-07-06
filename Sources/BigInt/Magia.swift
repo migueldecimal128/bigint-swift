@@ -829,13 +829,12 @@ func magia_setDivLimb(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ w: Limb) -> Int
         if w.nonzeroBitCount == 1 {
             return magia_setShiftRight(z, x, xNormLen, Int(w.trailingZeroBitCount))
         }
-        let dw = DWord(w)
         var carry: UInt64 = 0
         var i = xNormLen - 1
         while i >= 0 {
-            let t = (DWord(carry) << 64) | x[i].toDw()
-            z[i] = (t / dw).toLimb()
-            carry = (t % dw).toLimb()
+            let (q, r) = w.dividingFullWidth((high: carry, low: x[i]))
+            z[i] = q
+            carry = r
             i -= 1
         }
         let zNormLen = xNormLen - (z[xNormLen - 1] == 0 ? 1 : 0)
@@ -884,12 +883,10 @@ func magia_calcRemLimb(_ x: Magia, _ xNormLen: Int, _ w: Limb) -> Limb {
             return x[0] & ((Limb(1) << w.trailingZeroBitCount) - 1)
         }
         if xNormLen == 1 { return x[0] % w }
-        let dw = DWord(w)
         var carry: UInt64 = 0
         var i = xNormLen - 1
         while i >= 0 {
-            let t = (DWord(carry) << 64) | x[i].toDw()
-            carry = (t % dw).toLimb()
+            carry = w.dividingFullWidth((high: carry, low: x[i])).remainder
             i -= 1
         }
         return carry
@@ -994,6 +991,56 @@ func magia_setRem(_ z: Magia, _ x: Magia, _ xNormLen: Int, _ xTmp: Magia?,
     return rNormLen
 }
 
+// MARK: - Möller-Granlund Reciprocal Division Helpers
+
+@inline(__always)
+func m64_addCarry(_ s: UInt64, _ a: UInt64) -> UInt64 {
+    s < a ? 1 : 0
+}
+
+@inline(__always)
+func m64_subBorrow(_ a: UInt64, _ b: UInt64) -> UInt64 {
+    a < b ? 1 : 0
+}
+
+@inline(__always)
+func m64_cmp128(_ loA: UInt64, _ hiA: UInt64, _ loB: UInt64, _ hiB: UInt64) -> Int {
+    if hiA != hiB { return hiA < hiB ? -1 : 1 }
+    if loA != loB { return loA < loB ? -1 : 1 }
+    return 0
+}
+
+@inline(__always)
+func m64_divlu(_ u1: UInt64, _ u0: UInt64, _ v0: UInt64) -> (quotient: UInt64, remainder: UInt64) {
+    verify(u1 < v0)
+    return v0.dividingFullWidth((high: u1, low: u0))
+}
+
+@inline(__always)
+func m64_invertLimb(_ d1: UInt64) -> UInt64 {
+    return m64_divlu(~d1, UInt64.max, d1).quotient
+}
+
+func m64_reciprocal3by2(_ d1: UInt64, _ d0: UInt64) -> UInt64 {
+    var v = m64_invertLimb(d1)
+    var p = d1 &* v &+ d0
+    if p < d0 {
+        v &-= 1
+        if p >= d1 { v &-= 1; p &-= d1 }
+        p &-= d1
+    }
+    let t1 = unsignedMulHi(d0, v)
+    let t0 = d0 &* v
+    p = p &+ t1
+    if p < t1 {
+        v &-= 1
+        if p >= d1 && (p > d1 || t0 >= d0) {
+            v &-= 1
+        }
+    }
+    return v
+}
+
 // MARK: - Knuth Algorithm D (base 2^64)
 
 /// Multi-word division. q (length ≥ m-n+1) or nil; r (length ≥ n) or nil.
@@ -1042,76 +1089,93 @@ func magia_knuthDivide(_ q: Magia?, _ r: Magia?, _ u: Magia, _ v: Magia, _ m: In
     return -1
 }
 
-/// Core of Knuth division; `un` is side-effected and holds the remainder.
+/// Core of Möller-Granlund division (GMP mpn_sbpi1_div_qr style).
+/// `un` is side-effected and holds the remainder.
 func magia_knuthDivideNormalizedCore(_ q: Magia?, _ un: Magia, _ vn: Magia, _ m: Int, _ n: Int) {
     // top limb must be normalized (hi bit of the 64-bit limb set)
     if m < n || n < 2 || vn[n - 1] < 0x8000_0000_0000_0000 { fatalError() }
 
-    let vn_1 = vn[n - 1]               // UInt64, normalized (>= 2^63)
-    let vn_2 = vn[n - 2]               // UInt64
-    let vn_1d = DWord(vn_1)
-    let vn_2d = DWord(vn_2)
+    let d1 = vn[n - 1]
+    let d0 = vn[n - 2]
+    let v = m64_reciprocal3by2(d1, d0)
 
     var j = m - n
     while j >= 0 {
         let jn = j + n
-        let jn1 = jn - 1
-        let jn2 = jn - 2
-        // estimate q̂ = (un[j+n]*B + un[j+n-1]) / vn[n-1], with B = 2^64.
-        let hiLimb = un[jn]
-        let loLimb = un[jn1]
-        var qhat: DWord
-        var rhat: DWord
-        if hiLimb >= vn_1 {
-            // True quotient would be >= 2^64 (un[jn] <= vn_1 by the Knuth
-            // invariant, so this is the un[jn] == vn_1 edge). dividingFullWidth
-            // would TRAP here — cap qhat at B-1 and derive the matching rhat.
-            qhat = DWord(UInt64.max)
-            let num = (DWord(hiLimb) << 64) | DWord(loLimb)
-            rhat = num &- qhat &* vn_1d
+        let n2 = un[jn]
+        let n1 = un[jn - 1]
+
+        // --- DIV3BY2 estimate qhat ∈ [q_true, q_true + 1] ---
+        var qhat: UInt64
+        if n2 == d1 && n1 == d0 {
+            qhat = UInt64.max                                   // (n2:n1) == top-two ⇒ digit is β−1
         } else {
-            let (q64, r64) = vn_1.dividingFullWidth((high: hiLimb, low: loLimb))
-            qhat = DWord(q64)
-            rhat = DWord(r64)
+            let n0 = un[jn - 2]
+            let pHi = unsignedMulHi(n2, v)
+            let pLo = n2 &* v
+            let qLow = pLo &+ n1
+            var qh = pHi &+ n2 &+ m64_addCarry(qLow, pLo)
+            let q0 = qLow
+            // q*d low 128 bits
+            let qdLo = qh &* d0
+            let qdHi = unsignedMulHi(qh, d0) &+ qh &* d1
+            // rem = (n1:n0) − (qdHi:qdLo) − (d1:d0)   (low 128 bits)
+            let tLo = n0 &- qdLo
+            let tHi = n1 &- qdHi &- m64_subBorrow(n0, qdLo)
+            var remLo = tLo &- d0
+            var remHi = tHi &- d1 &- m64_subBorrow(tLo, d0)
+            qh &+= 1
+            if remHi >= q0 {       // estimate one too large
+                qh &-= 1
+                let nLo = remLo &+ d0
+                remHi = remHi &+ d1 &+ m64_addCarry(nLo, remLo)
+                remLo = nLo
+            }
+            if m64_cmp128(remLo, remHi, d0, d1) >= 0 { // rare: still one short
+                qh &+= 1
+            }
+            qhat = qh
         }
 
-        // refine (Knuth D3, ≤2 iterations). Guard `rhat < B` so `rhat << 64`
-        // can't overflow; once rhat >= B the test is false and we stop.
-        let un_j = DWord(un[jn2])
-        while rhat >> 64 == 0 && qhat &* vn_2d > (rhat << 64) | un_j {
-            qhat &-= 1
-            rhat = rhat &+ vn_1d
-        }
-
-        // multiply & subtract (SIGNED Int128 borrow propagation)
-        var carry: Int128 = 0
+        // --- multiply & subtract  un[j..j+n-1] -= qhat * vn[0..n-1] ---
+        var borrow: UInt64 = 0
+        let qU = qhat
         var i = 0
         while i < n {
-            let prod = qhat &* vn[i].toDw()       // DWord, < 2^128
-            let prodHi = prod >> 64
-            let prodLo = prod & DWord(UInt64.max)
-            let unIJ = un[j + i].toDw()
-            let t = Int128(bitPattern: unIJ) &- Int128(bitPattern: prodLo) &- carry
-            un[j + i] = Limb(truncatingIfNeeded: t)
-            carry = Int128(bitPattern: prodHi) &- (t >> 64)   // arithmetic shift
+            let vlo = qU &* vn[i]
+            let vhi = unsignedMulHi(qU, vn[i])
+            let vlc = vlo &+ borrow
+            let cyAdd = vlc < vlo ? UInt64(1) : UInt64(0)
+            let ui = un[j + i]
+            let lo = ui &- vlc
+            let bor = ui < vlc ? UInt64(1) : UInt64(0)
+            un[j + i] = lo
+            borrow = vhi &+ cyAdd &+ bor
             i += 1
         }
-        let t = Int128(bitPattern: un[jn].toDw()) &- carry
-        un[jn] = Limb(truncatingIfNeeded: t)
-        if let q {
-            let borrow: Int128 = t < 0 ? 1 : 0
-            q[j] = Limb(truncatingIfNeeded: Int128(bitPattern: qhat) &- borrow)
+        let unjn = un[jn]
+        let t = unjn &- borrow
+        un[jn] = t
+        let underflow = unjn < borrow
+        if let q = q {
+            q[j] = qhat &- (underflow ? 1 : 0)
         }
-        if t < 0 {
-            var c2: DWord = 0
+
+        // --- add-back when the estimate was one too large ---
+        if underflow {
+            var c: UInt64 = 0
             var i2 = 0
             while i2 < n {
-                let sum = un[j + i2].toDw() &+ vn[i2].toDw() &+ c2
-                un[j + i2] = sum.toLimb()
-                c2 = sum >> 64
+                let a = un[j + i2]
+                let ab = a &+ vn[i2]
+                let c1 = ab < a ? UInt64(1) : UInt64(0)
+                let s = ab &+ c
+                let c2 = s < ab ? UInt64(1) : UInt64(0)
+                un[j + i2] = s
+                c = c1 &+ c2
                 i2 += 1
             }
-            un[j + n] = un[j + n] &+ Limb(truncatingIfNeeded: c2)
+            un[jn] = un[jn] &+ c
         }
         j -= 1
     }
